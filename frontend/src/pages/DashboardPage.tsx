@@ -121,7 +121,7 @@ export function DashboardPage() {
 
       {d && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Stat label="Agents" value={d.totals.agents} />
             <Stat label="Raw events" value={d.totals.raw_events} />
             <Stat label="Normalized events" value={d.totals.events} />
@@ -130,21 +130,21 @@ export function DashboardPage() {
             <Stat label="Responses" value={d.totals.responses} />
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-3">
-            <Card title="Scenario result" className="lg:col-span-1">
-              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-                <dt className="text-zinc-500">Scenario</dt><dd>{d.run.scenario_id}</dd>
-                <dt className="text-zinc-500">Gateway</dt><dd>{d.run.gateway_mode}</dd>
-                <dt className="text-zinc-500">Seed / drop</dt><dd>{d.run.seed} / {pct(d.run.drop_rate)}</dd>
-                <dt className="text-zinc-500">Labeled malicious</dt>
-                <dd className="font-mono text-xs">{d.run.labels.malicious_agent_ids.map(shortId).join(", ") || "none"}</dd>
-                <dt className="text-zinc-500">Severity</dt>
+          <div className="grid gap-5 xl:grid-cols-3">
+            <Card title="Scenario result" className="xl:col-span-1">
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2.5 text-[14px] [&>dd]:min-w-0 [&>dd]:break-words">
+                <dt className="text-faint">Scenario</dt><dd>{d.run.scenario_id}</dd>
+                <dt className="text-faint">Gateway</dt><dd>{d.run.gateway_mode}</dd>
+                <dt className="text-faint">Seed / drop</dt><dd>{d.run.seed} / {pct(d.run.drop_rate)}</dd>
+                <dt className="text-faint">Labeled malicious</dt>
+                <dd className="font-mono text-[13px]">{d.run.labels.malicious_agent_ids.map(shortId).join(", ") || "none"}</dd>
+                <dt className="text-faint">Severity</dt>
                 <dd className="flex flex-wrap gap-1">{Object.entries(d.severity_counts).map(([k, v]) => <span key={k}><Badge value={k} /> {v}</span>)}{!Object.keys(d.severity_counts).length && "none"}</dd>
-                <dt className="text-zinc-500">Outcomes</dt>
+                <dt className="text-faint">Outcomes</dt>
                 <dd className="flex flex-wrap gap-1">{Object.entries(d.response_outcomes).map(([k, v]) => <span key={k}><Badge value={k} /> {v}</span>)}{!Object.keys(d.response_outcomes).length && "none"}</dd>
               </dl>
             </Card>
-            <Card title="Agent communication graph" className="lg:col-span-2"><GraphView graph={d.graph} height={320} /></Card>
+            <Card title="Agent communication graph" className="xl:col-span-2"><GraphView graph={d.graph} height={320} /></Card>
           </div>
 
           <Card title="Event timeline"><Timeline items={d.timeline} /></Card>
@@ -154,7 +154,7 @@ export function DashboardPage() {
 
           <Card title="Run evaluation (vs. ground-truth labels)">
             {d.evaluation ? <Metrics ev={d.evaluation} /> : <Empty>Normalize events to evaluate this run.</Empty>}
-            <p className="mt-3 text-xs text-zinc-500">Agent-level metrics. Latency = time from an agent's first malicious event to the event that completed the alert's evidence (batch detection could fire then).</p>
+            <p className="mt-3 text-[13px] text-faint">Agent-level metrics. Latency = time from an agent's first malicious event to the event that completed the alert's evidence (batch detection could fire then).</p>
           </Card>
         </>
       )}
@@ -171,7 +171,7 @@ export function DashboardPage() {
           <OutputSelect value={suiteCfg.persist} onChange={(v) => setSuiteCfg({ ...suiteCfg, persist: v })} collection="evaluations" />
         </div>
         <div className="mt-4 flex justify-end"><Button onClick={runSuite} busy={busy === "suite"}>Run evaluation suite</Button></div>
-        <p className="mt-2 text-xs text-zinc-500">Runs in memory (no events persisted); only the summary is saved.</p>
+        <p className="mt-2 text-[13px] text-faint">Runs in memory (no events persisted); only the summary is saved.</p>
       </Card>
 
       {suite && (

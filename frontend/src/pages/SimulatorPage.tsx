@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { ResultViewer, type Column } from "../components/ResultViewer";
-import { Badge, Button, Card, Field, OutputSelect, PageHeader, RunSelect, StatusBanner, inputCls, type Status } from "../components/ui";
+import { Badge, Button, Card, Field, OutputSelect, PageHeader, RunSelect, Segmented, StatusBanner, inputCls, type Status } from "../components/ui";
 import { shortId, time } from "../lib/format";
 import { useAppState, useRunData } from "../state";
 import type { AgentCount, GatewayMode, RawEvent, ScenarioConfig } from "../types";
@@ -73,21 +73,15 @@ export function SimulatorPage() {
       {stored.error && <StatusBanner status={{ kind: "error", message: stored.error }} onClose={() => undefined} />}
 
       <Card title="Scenario configuration">
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-x-5 gap-y-5 md:grid-cols-2 2xl:grid-cols-3">
           <Field label="Scenario" hint={scenario?.description}>
             <select className={inputCls} value={cfg.scenario_id} onChange={(e) => set("scenario_id", e.target.value)}>
               {meta?.scenarios.map((s) => <option key={s.scenario_id} value={s.scenario_id}>{s.name}</option>)}
             </select>
           </Field>
-          <Field label="Agent count">
-            <div className="flex gap-1">
-              {(meta?.agent_counts ?? [3, 5, 10, 20]).map((n) => (
-                <button key={n} onClick={() => set("agent_count", n as AgentCount)}
-                  className={`flex-1 rounded-md border px-2 py-1.5 text-sm ${cfg.agent_count === n ? "border-zinc-900 bg-zinc-900 text-white" : "border-zinc-300 bg-white hover:bg-zinc-50"}`}>
-                  {n}
-                </button>
-              ))}
-            </div>
+          <Field label="Agent count" asDiv>
+            <Segmented full value={cfg.agent_count} onChange={(n) => set("agent_count", n)}
+              options={(meta?.agent_counts ?? [3, 5, 10, 20]).map((n) => ({ value: n as AgentCount, label: n }))} />
           </Field>
           <Field label="Seed" hint="Same seed + scenario = same events.">
             <input type="number" className={inputCls} value={cfg.seed} onChange={(e) => set("seed", Number(e.target.value) || 0)} />
@@ -110,12 +104,12 @@ export function SimulatorPage() {
             </select>
           </Field>
           <OutputSelect value={cfg.persist} onChange={(v) => set("persist", v)} collection="raw_events" />
-          <label className="flex items-center gap-2 self-end pb-2 text-sm">
+          <label className="flex items-center gap-2.5 self-end pb-2.5 text-[14px] text-ink">
             <input type="checkbox" checked={cfg.auto_pipeline} disabled={!cfg.persist} onChange={(e) => set("auto_pipeline", e.target.checked)} />
             Auto-run collect → detect → respond → evaluate
           </label>
         </div>
-        <div className="mt-4 flex justify-end">
+        <div className="mt-6 flex justify-end">
           <Button onClick={run} busy={busy}>Run simulation</Button>
         </div>
       </Card>

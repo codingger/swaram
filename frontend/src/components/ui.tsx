@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { download, type ExportFormat } from "../lib/export";
 import { dateTime } from "../lib/format";
@@ -10,56 +10,82 @@ export const STAGES = ["simulated", "collected", "detected", "responded", "evalu
 export function Button({ children, variant = "primary", busy, ...props }:
   React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost"; busy?: boolean }) {
   const styles = {
-    primary: "bg-zinc-900 text-white hover:bg-zinc-700 disabled:bg-zinc-400",
-    secondary: "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-100 disabled:text-zinc-400",
-    ghost: "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900",
+    primary: "bg-accent text-white hover:bg-accent-hover",
+    secondary: "bg-black/[0.05] text-ink hover:bg-black/[0.08]",
+    ghost: "text-accent hover:bg-accent/[0.06]",
   }[variant];
   return (
     <button {...props} disabled={props.disabled || busy}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${styles} ${props.className ?? ""}`}>
-      {busy && <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />}
+      className={`inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-[18px] py-2 text-[14px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent/25 disabled:cursor-not-allowed disabled:opacity-40 ${styles} ${props.className ?? ""}`}>
+      {busy && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />}
       {children}
     </button>
   );
 }
 
-export function Card({ title, actions, children, className = "" }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
+export function Card({ title, actions, children, className = "", flush = false }:
+  { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
   return (
-    <section className={`rounded-lg border border-zinc-200 bg-white ${className}`}>
+    <section className={`rounded-[20px] bg-white shadow-card ${className}`}>
       {(title || actions) && (
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-zinc-800">{title}</h2>
+        <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5">
+          <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">{title}</h2>
           <div className="flex flex-wrap items-center gap-2">{actions}</div>
         </header>
       )}
-      <div className="p-4">{children}</div>
+      <div className={flush ? "pt-4" : "p-6"}>{children}</div>
     </section>
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, children, asDiv = false }: { label: string; hint?: ReactNode; children: ReactNode; asDiv?: boolean }) {
+  const Tag = asDiv ? "div" : "label";
   return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-medium text-zinc-600">{label}</span>
+    <Tag className="block">
+      <span className="mb-1.5 block text-[13px] font-medium text-muted">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-zinc-500">{hint}</span>}
-    </label>
+      {hint && <span className="mt-1.5 block text-[12px] leading-snug text-faint">{hint}</span>}
+    </Tag>
   );
 }
 
-export const inputCls = "w-full rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500";
+export const inputCls =
+  "w-full rounded-xl border border-line bg-white px-3.5 py-2 text-[14px] text-ink transition placeholder:text-faint focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15";
+
+/** iOS/macOS-style segmented control. */
+export function Segmented<T extends string | number>({ options, value, onChange, full = false, size = "md" }: {
+  options: { value: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; full?: boolean; size?: "sm" | "md";
+}) {
+  return (
+    <div role="radiogroup" className={`${full ? "flex w-full" : "inline-flex"} rounded-[10px] bg-black/[0.06] p-[3px]`}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button key={String(o.value)} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.value)}
+            className={`${full ? "flex-1" : ""} rounded-[8px] font-medium transition-all duration-150 ${size === "sm" ? "px-3 py-1 text-[12px]" : "px-3.5 py-1.5 text-[13px]"} ${on ? "bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-muted hover:text-ink"}`}>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function Banner({ kind, children, onClose }: { kind: "error" | "success" | "info" | "warning"; children: ReactNode; onClose?: () => void }) {
   const styles = {
-    error: "border-red-200 bg-red-50 text-red-800",
-    success: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    info: "border-sky-200 bg-sky-50 text-sky-800",
-    warning: "border-amber-200 bg-amber-50 text-amber-900",
+    error: "bg-[#fff1f0] text-[#c4161c]",
+    success: "bg-[#edfaf1] text-[#1b7a3a]",
+    info: "bg-[#eef5ff] text-[#0058b0]",
+    warning: "bg-[#fff7e8] text-[#935400]",
   }[kind];
   return (
-    <div role={kind === "error" ? "alert" : "status"} className={`flex items-start justify-between gap-3 rounded-md border px-3 py-2 text-sm ${styles}`}>
+    <div role={kind === "error" ? "alert" : "status"} className={`flex items-start justify-between gap-3 rounded-2xl px-4 py-3 text-[14px] leading-relaxed ${styles}`}>
       <div className="min-w-0 break-words">{children}</div>
-      {onClose && <button onClick={onClose} className="shrink-0 opacity-60 hover:opacity-100" aria-label="Dismiss">✕</button>}
+      {onClose && (
+        <button onClick={onClose} className="-mr-1 shrink-0 rounded-full p-1 opacity-50 transition hover:bg-black/5 hover:opacity-100" aria-label="Dismiss">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -70,51 +96,60 @@ export function StatusBanner({ status, onClose }: { status: Status; onClose: () 
   return status ? <Banner kind={status.kind} onClose={onClose}>{status.message}</Banner> : null;
 }
 
+const RED = "bg-[#ff3b30]/10 text-[#d70015]";
+const ORANGE = "bg-[#ff9500]/12 text-[#a35200]";
+const GREEN = "bg-[#34c759]/14 text-[#1f7a37]";
+const BLUE = "bg-[#0071e3]/10 text-[#0058b0]";
+const GRAY = "bg-black/[0.05] text-muted";
 const BADGE: Record<string, string> = {
-  critical: "bg-red-600 text-white", high: "bg-red-100 text-red-800", medium: "bg-amber-100 text-amber-800", low: "bg-zinc-100 text-zinc-700",
-  blocked: "bg-red-600 text-white", would_block: "bg-orange-100 text-orange-800", would_pause: "bg-violet-100 text-violet-800",
-  alerted: "bg-amber-100 text-amber-800", allowed: "bg-zinc-100 text-zinc-700",
-  denied: "bg-red-100 text-red-800", success: "bg-emerald-50 text-emerald-700", failed: "bg-zinc-200 text-zinc-700",
-  open: "bg-amber-100 text-amber-800", responded: "bg-sky-100 text-sky-800", contained: "bg-emerald-100 text-emerald-800",
-  simulated: "bg-sky-50 text-sky-700", enforced: "bg-red-50 text-red-700",
+  critical: "bg-[#ff3b30] text-white", high: RED, medium: ORANGE, low: GRAY,
+  blocked: "bg-[#ff3b30] text-white", would_block: ORANGE, would_pause: "bg-[#af52de]/12 text-[#8a3cad]",
+  alerted: ORANGE, allowed: GRAY,
+  denied: RED, success: GREEN, failed: GRAY, pending: GRAY,
+  open: ORANGE, responded: BLUE, contained: GREEN,
+  simulated: BLUE, enforced: RED, error: RED, warning: ORANGE,
 };
 
 export function Badge({ value }: { value: string | null | undefined }) {
   if (!value) return null;
-  return <span className={`inline-block whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium ${BADGE[value] ?? "bg-zinc-100 text-zinc-700"}`}>{value}</span>;
+  return <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-[3px] text-[12px] font-medium leading-none ${BADGE[value] ?? GRAY}`}>{value.replace(/_/g, " ")}</span>;
 }
 
 export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: "danger" | "ok" }) {
-  const color = tone === "danger" ? "text-red-700" : tone === "ok" ? "text-emerald-700" : "text-zinc-900";
+  const color = tone === "danger" ? "text-[#d70015]" : tone === "ok" ? "text-[#1f7a37]" : "text-ink";
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3">
-      <div className="text-xs text-zinc-500">{label}</div>
-      <div className={`mt-0.5 text-xl font-semibold tabular-nums ${color}`}>{value}</div>
+    <div className="rounded-[18px] bg-white px-5 py-4 shadow-card">
+      <div className="text-[13px] text-muted">{label}</div>
+      <div className={`mt-1 text-[28px] font-semibold leading-tight tracking-[-0.02em] tabular-nums ${color}`}>{value}</div>
     </div>
   );
 }
 
+/** Pipeline progress as a compact stepper. */
 export function StageBadges({ run }: { run: Run }) {
   return (
-    <div className="flex flex-wrap gap-1">
-      {STAGES.map((s) => (
-        <span key={s} title={run.stages[s] ?? "not run"}
-          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${run.stages[s] ? "bg-emerald-100 text-emerald-800" : "bg-zinc-100 text-zinc-400"}`}>
-          {s}
-        </span>
-      ))}
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      {STAGES.map((s) => {
+        const done = !!run.stages[s];
+        return (
+          <span key={s} title={run.stages[s] ?? "not run"} className={`flex items-center gap-1 text-[11px] font-medium ${done ? "text-[#1f7a37]" : "text-faint"}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${done ? "bg-[#34c759]" : "bg-black/15"}`} />
+            {s}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
 /** Input dataset selector: which run's stored data the module reads. */
-export function RunSelect({ label = "Input dataset (run)", requireStage }: { label?: string; requireStage?: string }) {
+export function RunSelect({ label = "Input dataset", requireStage }: { label?: string; requireStage?: string }) {
   const { runs, selectedRunId, selectRun } = useAppState();
   const run = runs.find((r) => r.run_id === selectedRunId);
   return (
     <Field label={label}>
       <select className={inputCls} value={selectedRunId ?? ""} onChange={(e) => selectRun(e.target.value || null)}>
-        {!runs.length && <option value="">No runs yet: create one in Agent Simulator</option>}
+        {!runs.length && <option value="">No runs yet. Create one in Agent Simulator.</option>}
         {runs.map((r) => (
           <option key={r.run_id} value={r.run_id}>
             {r.run_id} · {r.scenario_id} · {r.agent_count} agents · {dateTime(r.created_at)}
@@ -122,10 +157,10 @@ export function RunSelect({ label = "Input dataset (run)", requireStage }: { lab
         ))}
       </select>
       {run && (
-        <div className="mt-1.5 space-y-1">
+        <div className="mt-2 space-y-1">
           <StageBadges run={run} />
           {requireStage && !run.stages[requireStage] && (
-            <p className="text-xs text-amber-700">This run has not completed the “{requireStage}” stage yet.</p>
+            <p className="text-[12px] text-[#935400]">This run hasn't completed the “{requireStage}” stage yet.</p>
           )}
         </div>
       )}
@@ -140,7 +175,7 @@ export function OutputSelect({ value, onChange, collection }: { value: boolean; 
     <Field label="Output dataset">
       <select className={inputCls} value={value ? "store" : "preview"} onChange={(e) => onChange(e.target.value === "store")}>
         <option value="store">Save to {health?.workspace ?? "default"}/{collection} ({health?.storage ?? "store"})</option>
-        <option value="preview">Preview only (don't persist)</option>
+        <option value="preview">Preview only (don't save)</option>
       </select>
     </Field>
   );
@@ -148,16 +183,26 @@ export function OutputSelect({ value, onChange, collection }: { value: boolean; 
 
 export function ExportMenu({ data, filename }: { data: unknown; filename: string }) {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const empty = data === null || data === undefined || (Array.isArray(data) && data.length === 0);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
   return (
-    <div className="relative">
-      <Button variant="secondary" disabled={empty} onClick={() => setOpen((o) => !o)} aria-haspopup="menu">Export ▾</Button>
+    <div className="relative" ref={ref}>
+      <Button variant="secondary" disabled={empty} onClick={() => setOpen((o) => !o)} aria-haspopup="menu" className="!px-4 !py-1.5 !text-[13px]">
+        Export
+        <svg width="10" height="6" viewBox="0 0 12 8" aria-hidden><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </Button>
       {open && (
-        <div role="menu" className="absolute right-0 z-20 mt-1 w-32 rounded-md border border-zinc-200 bg-white py-1 shadow-lg" onMouseLeave={() => setOpen(false)}>
+        <div role="menu" className="absolute right-0 z-20 mt-2 w-40 overflow-hidden rounded-xl bg-white/95 p-1 shadow-pop ring-1 ring-black/5 backdrop-blur-xl">
           {(["json", "jsonl", "csv"] as ExportFormat[]).map((f) => (
-            <button key={f} role="menuitem" className="block w-full px-3 py-1.5 text-left text-sm hover:bg-zinc-100"
+            <button key={f} role="menuitem" className="block w-full rounded-lg px-3 py-1.5 text-left text-[13px] text-ink hover:bg-accent hover:text-white"
               onClick={() => { download(data, filename, f); setOpen(false); }}>
-              .{f}
+              Download .{f}
             </button>
           ))}
         </div>
@@ -168,7 +213,7 @@ export function ExportMenu({ data, filename }: { data: unknown; filename: string
 
 export function JsonBlock({ value, maxHeight = "24rem" }: { value: unknown; maxHeight?: string }) {
   return (
-    <pre className="overflow-auto rounded-md bg-zinc-950 p-3 font-mono text-xs leading-relaxed text-zinc-100" style={{ maxHeight }}>
+    <pre className="overflow-auto rounded-2xl bg-[#1d1d1f] p-4 font-mono text-[12px] leading-relaxed text-[#f5f5f7]" style={{ maxHeight }}>
       {JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -178,15 +223,13 @@ function InfoPart({ title, part }: { title: string; part?: ModuleInfoPart }) {
   const [view, setView] = useState<"sample" | "schema">("sample");
   if (!part) return null;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">{title}: <code className="font-mono text-xs">{part.model}</code>
-          {part.fixture && <span className="ml-2 text-xs font-normal text-zinc-500">fixtures/{part.fixture}</span>}</h3>
-        <div className="flex rounded-md border border-zinc-200 text-xs">
-          {(["sample", "schema"] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)} className={`px-2 py-1 ${view === v ? "bg-zinc-900 text-white" : "text-zinc-600"}`}>{v}</button>
-          ))}
+        <div>
+          <h3 className="text-[15px] font-semibold">{title} <code className="ml-1 font-mono text-[13px] font-normal text-muted">{part.model}</code></h3>
+          {part.fixture && <div className="text-[12px] text-faint">fixtures/{part.fixture}</div>}
         </div>
+        <Segmented size="sm" value={view} onChange={setView} options={[{ value: "sample", label: "Sample" }, { value: "schema", label: "Schema" }]} />
       </div>
       <JsonBlock value={view === "sample" ? part.sample ?? "(no sample fixture)" : part.schema} maxHeight="16rem" />
     </div>
@@ -207,19 +250,29 @@ export function InfoButton({ module }: { module: string }) {
   }, []);
   return (
     <>
-      <button onClick={() => setOpen(true)} title="Input/output schema and sample JSON"
-        className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-300 text-sm font-semibold text-zinc-600 hover:bg-zinc-100">
-        i
+      <button onClick={() => setOpen(true)} title="Data contract: input/output schema and sample JSON" aria-label="Show data contract"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-faint transition hover:bg-black/[0.05] hover:text-accent">
+        <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden>
+          <circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M10 9v5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <circle cx="10" cy="6.2" r="1" fill="currentColor" />
+        </svg>
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-10" onClick={() => setOpen(false)}>
-          <div role="dialog" aria-modal="true" className="w-full max-w-3xl space-y-4 rounded-lg bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Data contract</h2>
-              <button onClick={() => setOpen(false)} className="text-zinc-500 hover:text-zinc-900" aria-label="Close">✕</button>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/25 p-4 backdrop-blur-sm sm:p-12" onClick={() => setOpen(false)}>
+          <div role="dialog" aria-modal="true" className="w-full max-w-3xl space-y-6 rounded-[24px] bg-white p-6 shadow-pop sm:p-8" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[24px] font-semibold tracking-[-0.02em]">Data contract</h2>
+                <p className="text-[14px] text-muted">What this module reads and writes.</p>
+              </div>
+              <button onClick={() => setOpen(false)} aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/[0.05] text-muted hover:bg-black/[0.08] hover:text-ink">
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+              </button>
             </div>
             {error && <Banner kind="error">{error}</Banner>}
-            {!info && !error && <p className="text-sm text-zinc-500">Loading…</p>}
+            {!info && !error && <p className="text-[14px] text-muted">Loading…</p>}
             {info && (
               <>
                 <InfoPart title="Input" part={info.input} />
@@ -236,14 +289,14 @@ export function InfoButton({ module }: { module: string }) {
 
 export function PageHeader({ step, title, description, module, children }: { step: number; title: string; description: string; module: string; children?: ReactNode }) {
   return (
-    <header className="flex flex-wrap items-start justify-between gap-3">
+    <header className="flex flex-wrap items-end justify-between gap-4 pb-2">
       <div className="min-w-0">
-        <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">Module {step}</div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">{title}</h1>
+        <div className="text-[14px] font-semibold text-[#bf4800]">Module {step}</div>
+        <div className="mt-1 flex items-center gap-2">
+          <h1 className="text-[32px] font-semibold leading-[1.1] tracking-[-0.025em] sm:text-[40px]">{title}</h1>
           <InfoButton module={module} />
         </div>
-        <p className="mt-1 max-w-2xl text-sm text-zinc-600">{description}</p>
+        <p className="mt-3 max-w-2xl text-[17px] leading-relaxed text-muted">{description}</p>
       </div>
       {children}
     </header>
@@ -251,5 +304,5 @@ export function PageHeader({ step, title, description, module, children }: { ste
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="py-6 text-center text-sm text-zinc-500">{children}</p>;
+  return <p className="py-10 text-center text-[14px] text-faint">{children}</p>;
 }

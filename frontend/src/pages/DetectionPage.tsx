@@ -79,18 +79,18 @@ export function DetectionPage() {
           </div>
         </Card>
         <Card title="Detection rules" className="lg:col-span-2">
-          {rules.error && <p className="text-sm text-red-700">{rules.error}</p>}
-          <ul className="divide-y divide-zinc-100">
+          {rules.error && <p className="text-[14px] text-[#d70015]">{rules.error}</p>}
+          <ul className="divide-y divide-black/[0.06]">
             {rules.data?.map((r) => (
-              <li key={r.rule_id} className="flex items-start justify-between gap-3 py-2">
+              <li key={r.rule_id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                    <span className="font-mono text-xs">{r.rule_id}</span>{r.name}<Badge value={r.severity} />
-                    <span className="text-xs font-normal text-zinc-500">→ {r.recommended_action}</span>
+                  <div className="text-[14px] font-medium text-ink">{r.name}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-faint">
+                    <span className="font-mono">{r.rule_id}</span><Badge value={r.severity} /><span>recommends {r.recommended_action}</span>
                   </div>
-                  <p className="text-xs text-zinc-600">{r.description}</p>
+                  <p className="mt-1.5 text-[13px] leading-snug text-muted">{r.description}</p>
                 </div>
-                <label className="flex shrink-0 items-center gap-1.5 text-xs">
+                <label className="flex shrink-0 items-center gap-1.5 text-[13px]">
                   <input type="checkbox" checked={r.enabled} onChange={() => toggleRule(r)} /> enabled
                 </label>
               </li>
@@ -106,17 +106,17 @@ export function DetectionPage() {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="Evidence">
           {current ? (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-3 text-[14px]">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge value={current.severity} /><span className="font-medium">{current.rule_name}</span>
-                <span className="font-mono text-xs text-zinc-500">{current.alert_id}</span>
+                <span className="font-mono text-[13px] text-faint">{current.alert_id}</span>
               </div>
-              <p className="text-zinc-700">{current.reason}</p>
-              <ol className="space-y-1.5 border-l-2 border-zinc-200 pl-3">
+              <p className="text-ink">{current.reason}</p>
+              <ol className="space-y-1.5 border-l-2 border-black/10 pl-3">
                 {current.evidence.map((ev) => (
-                  <li key={ev.event_id} className="text-xs">
-                    <span className="font-mono text-zinc-500">{ev.timestamp.slice(11, 23)} · {ev.event_id}</span>
-                    <div className="text-zinc-800">{ev.summary}</div>
+                  <li key={ev.event_id} className="text-[13px]">
+                    <span className="font-mono text-faint">{ev.timestamp.slice(11, 23)} · {ev.event_id}</span>
+                    <div className="text-ink">{ev.summary}</div>
                   </li>
                 ))}
               </ol>

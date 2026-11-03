@@ -82,7 +82,7 @@ export function ResponsePage() {
         <Card title="Run response">
           <div className="space-y-4">
             <RunSelect requireStage="detected" />
-            {run && <p className="text-xs text-zinc-600">Simulation gateway mode for this run: <strong>{run.gateway_mode}</strong></p>}
+            {run && <p className="text-[13px] text-muted">Simulation gateway mode for this run: <strong>{run.gateway_mode}</strong></p>}
             <OutputSelect value={persist} onChange={setPersist} collection="response_actions" />
             <Button onClick={run_} busy={busy} className="w-full" disabled={!policy}>Apply policy</Button>
           </div>
@@ -97,10 +97,10 @@ export function ResponsePage() {
                 </select>
               </Field>
               <div>
-                <div className="mb-1 text-xs font-medium text-zinc-600">Severity → action</div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="mb-1 text-[13px] font-medium text-muted">Severity → action</div>
+                <div className="grid grid-cols-2 gap-3 2xl:grid-cols-4">
                   {SEVERITIES.map((s) => (
-                    <label key={s} className="text-xs">
+                    <label key={s} className="text-[13px]">
                       <Badge value={s} />
                       <select className={`${inputCls} mt-1`} value={policy.severity_actions[s]}
                         onChange={(e) => update({ severity_actions: { ...policy.severity_actions, [s]: e.target.value as ResponseDecision } })}>
@@ -111,10 +111,10 @@ export function ResponsePage() {
                 </div>
               </div>
               <div>
-                <div className="mb-1 text-xs font-medium text-zinc-600">Rule overrides</div>
+                <div className="mb-1 text-[13px] font-medium text-muted">Rule overrides</div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {RULES.map((r) => (
-                    <label key={r} className="text-xs">
+                    <label key={r} className="text-[13px]">
                       <span className="font-mono">{r}</span>
                       <select className={`${inputCls} mt-1`} value={policy.rule_overrides[r] ?? ""}
                         onChange={(e) => {
@@ -123,7 +123,7 @@ export function ResponsePage() {
                           else delete next[r];
                           update({ rule_overrides: next });
                         }}>
-                        <option value="">(use severity)</option>
+                        <option value="">Default</option>
                         {DECISIONS.map((d) => <option key={d}>{d}</option>)}
                       </select>
                     </label>
@@ -138,7 +138,7 @@ export function ResponsePage() {
       <ResultViewer title={preview ? "Response log (preview)" : "Response log"} rows={actions} columns={columns}
         filename={`response_actions_${selectedRunId}`} rowKey={(a) => a.response_id}
         empty="No response records. Apply the policy to a run with detection results." />
-      {stored.error && <p className="text-sm text-red-700">{stored.error}</p>}
+      {stored.error && <p className="text-[14px] text-[#d70015]">{stored.error}</p>}
     </div>
   );
 }

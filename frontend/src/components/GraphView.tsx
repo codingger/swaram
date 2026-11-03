@@ -3,8 +3,10 @@ import type { AgentGraph } from "../types";
 import { Empty } from "./ui";
 
 const ROLE_COLOR: Record<string, string> = {
-  planner: "#6366f1", analyst: "#0ea5e9", coder: "#10b981", researcher: "#f59e0b", reviewer: "#8b5cf6",
+  planner: "#5e5ce6", analyst: "#0071e3", coder: "#30b158", researcher: "#ff9500", reviewer: "#af52de",
 };
+const RED = "#ff3b30";
+const EDGE = "#c7c7cc";
 
 /** Circular layout of the agent communication graph; external sinks sit on the right. */
 export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | undefined; height?: number }) {
@@ -32,7 +34,7 @@ export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | 
         <defs>
           {["msg", "xfer"].map((k) => (
             <marker key={k} id={`arrow-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill={k === "xfer" ? "#dc2626" : "#a1a1aa"} />
+              <path d="M0,0 L10,5 L0,10 z" fill={k === "xfer" ? RED : EDGE} />
             </marker>
           ))}
         </defs>
@@ -48,7 +50,7 @@ export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | 
           const dim = hover && e.source !== hover && e.target !== hover;
           return (
             <path key={`${e.source}-${e.target}`} d={`M${x1},${y1} Q${mx},${my} ${x2},${y2}`} fill="none"
-              stroke={xfer ? "#dc2626" : "#a1a1aa"} strokeWidth={1 + (3 * e.count) / maxCount} strokeOpacity={dim ? 0.12 : 0.8}
+              stroke={xfer ? RED : EDGE} strokeWidth={1 + (3 * e.count) / maxCount} strokeOpacity={dim ? 0.12 : 0.9} strokeLinecap="round"
               markerEnd={`url(#arrow-${xfer ? "xfer" : "msg"})`}>
               <title>{`${e.source} → ${e.target}: ${e.count} ${e.kind}(s)`}</title>
             </path>
@@ -61,24 +63,25 @@ export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | 
           return (
             <g key={n.id} transform={`translate(${p.x},${p.y})`} opacity={active(n.id) ? 1 : 0.25}
               onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)} className="cursor-default">
+              {n.flagged && !ext && <circle r={20} fill={RED} fillOpacity={0.12} />}
               {ext ? (
-                <rect x={-14} y={-14} width={28} height={28} rx={4} fill="#fff" stroke="#dc2626" strokeWidth={1.5} />
+                <rect x={-14} y={-14} width={28} height={28} rx={8} fill="#fff" stroke={RED} strokeWidth={1.5} />
               ) : (
-                <circle r={14} fill={ROLE_COLOR[n.role ?? ""] ?? "#71717a"} stroke={n.flagged ? "#dc2626" : "#fff"} strokeWidth={n.flagged ? 3.5 : 2} />
+                <circle r={14} fill={ROLE_COLOR[n.role ?? ""] ?? "#8e8e93"} stroke={n.flagged ? RED : "#fff"} strokeWidth={n.flagged ? 3 : 2} />
               )}
-              <text y={ext ? 4 : 4} textAnchor="middle" fontSize="10" fontWeight="600" fill={ext ? "#dc2626" : "#fff"}>{ext ? "EXT" : label}</text>
-              <text y={28} textAnchor="middle" fontSize="10" fill="#3f3f46">{ext ? label : n.role}</text>
+              <text y={4} textAnchor="middle" fontSize="10" fontWeight="600" fill={ext ? RED : "#fff"}>{ext ? "EXT" : label}</text>
+              <text y={30} textAnchor="middle" fontSize="10.5" fill="#6e6e73">{ext ? label : n.role}</text>
               <title>{`${n.id}${n.role ? ` (${n.role})` : ""}\nevents: ${n.event_count}\ndegree: ${n.degree_centrality}\nbetweenness: ${n.betweenness}${n.flagged ? "\nFLAGGED" : ""}`}</title>
             </g>
           );
         })}
       </svg>
-      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-600">
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-muted">
         {Object.entries(ROLE_COLOR).map(([r, c]) => (
-          <span key={r} className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} />{r}</span>
+          <span key={r} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c }} />{r}</span>
         ))}
-        <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-full border-2 border-red-600" />flagged</span>
-        <span className="flex items-center gap-1"><span className="h-0.5 w-4 bg-red-600" />external transfer</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-[#ff3b30]" />flagged</span>
+        <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded bg-[#ff3b30]" />external transfer</span>
       </div>
     </div>
   );
