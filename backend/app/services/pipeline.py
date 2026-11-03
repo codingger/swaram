@@ -1,0 +1,259 @@
+"""Orchestrates the five modules against the shared store.
+
+Each stage reads its input dataset from the store (keyed by run_id), writes its
+output dataset back, and stamps `run.stages`. Re-running a stage replaces that
+run's previous output so references stay consistent.
+"""
+from __future__ import annotations
+
+import hashlib
+from collections import Counter
+from typing import Any
+
+from app.modules.collector.normalizer import collect
+from app.modules.detection.graph import build_graph
+from app.modules.detection.rules import DEFAULT_RULES, run_rules
+from app.modules.evaluation.metrics import aggregate, evaluate
+from app.modules.response.policy import DEFAULT_POLICY, alert_status_after, respond
+from app.modules.simulator.engine import run_simulation
+from app.modules.simulator.world import SCENARIOS
+from app.schemas import (
+    Agent, Alert, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
+    RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult, SuiteRequest,
+    SuiteResult,
+)
+from app.storage.base import Store
+from app.timeutil import now_iso
+
+# Downstream outputs invalidated when an upstream stage re-runs.
+DOWNSTREAM = {
+    "collected": ("normalized_events", "alerts", "response_actions"),
+    "detected": ("alerts", "response_actions"),
+    "responded": ("response_actions",),
+}
+STAGE_ORDER = ["simulated", "collected", "detected", "responded", "evaluated"]
+
+
+class NotFound(Exception):
+    pass
+
+
+def _dump(model) -> dict[str, Any]:
+    return model.model_dump(mode="json")
+
+
+class Pipeline:
+    def __init__(self, store: Store):
+        self.store = store
+
+    # ---------------------------------------------------------------- seeds
+    def seed_defaults(self) -> None:
+        if not self.store.list("scenarios", limit=1):
+            self.store.put_many("scenarios", [(s.scenario_id, _dump(s)) for s in SCENARIOS])
+        if not self.store.list("detection_rules", limit=1):
+            self.store.put_many("detection_rules", [(r.rule_id, _dump(r)) for r in DEFAULT_RULES])
+        if self.store.get("response_policies", DEFAULT_POLICY.policy_id) is None:
+            self.store.put("response_policies", DEFAULT_POLICY.policy_id, _dump(DEFAULT_POLICY))
+
+    # ---------------------------------------------------------------- reads
+    def get_run(self, run_id: str) -> Run:
+        doc = self.store.get("runs", run_id)
+        if doc is None:
+            raise NotFound(f"run {run_id} not found")
+        return Run.model_validate(doc)
+
+    def list_runs(self, limit: int = 50) -> list[Run]:
+        runs = [Run.model_validate(d) for d in self.store.list("runs")]
+        return sorted(runs, key=lambda r: r.created_at, reverse=True)[:limit]
+
+    def agents(self, run_id: str) -> list[Agent]:
+        return [Agent.model_validate(d) for d in self.store.list("agents", run_id=run_id)]
+
+    def raw_events(self, run_id: str) -> list[RawEvent]:
+        return sorted((RawEvent.model_validate(d) for d in self.store.list("raw_events", run_id=run_id)), key=lambda e: e.sequence)
+
+    def normalized_events(self, run_id: str) -> list[NormalizedEvent]:
+        evs = [NormalizedEvent.model_validate(d) for d in self.store.list("normalized_events", run_id=run_id)]
+        return sorted(evs, key=lambda e: (e.timestamp, e.sequence))
+
+    def alerts(self, run_id: str) -> list[Alert]:
+        return [Alert.model_validate(d) for d in self.store.list("alerts", run_id=run_id)]
+
+    def responses(self, run_id: str) -> list[ResponseAction]:
+        return [ResponseAction.model_validate(d) for d in self.store.list("response_actions", run_id=run_id)]
+
+    def rules(self) -> list[DetectionRule]:
+        docs = self.store.list("detection_rules")
+        return [DetectionRule.model_validate(d) for d in docs] or DEFAULT_RULES
+
+    def policy(self, policy_id: str = "default") -> ResponsePolicy:
+        doc = self.store.get("response_policies", policy_id)
+        return ResponsePolicy.model_validate(doc) if doc else DEFAULT_POLICY
+
+    def save_policy(self, policy: ResponsePolicy) -> ResponsePolicy:
+        self.store.put("response_policies", policy.policy_id, _dump(policy))
+        return policy
+
+    def save_rule(self, rule: DetectionRule) -> DetectionRule:
+        self.store.put("detection_rules", rule.rule_id, _dump(rule))
+        return rule
+
+    # ---------------------------------------------------------------- helpers
+    def _mark(self, run: Run, stage: str, **counts: int) -> Run:
+        run.stages[stage] = now_iso()
+        idx = STAGE_ORDER.index(stage)
+        for later in STAGE_ORDER[idx + 1:]:
+            run.stages.pop(later, None)
+        run.counts.update(counts)
+        self.store.put("runs", run.run_id, _dump(run))
+        return run
+
+    def _replace(self, collection: str, run_id: str, docs: list[tuple[str, dict]]) -> None:
+        self.store.delete_run_docs(collection, run_id)
+        if docs:
+            self.store.put_many(collection, docs)
+
+    def _invalidate(self, stage: str, run_id: str) -> None:
+        for col in DOWNSTREAM.get(stage, ()):
+            self.store.delete_run_docs(col, run_id)
+
+    # ---------------------------------------------------------------- stages
+    def simulate(self, config: ScenarioConfig) -> SimulationResult:
+        result = run_simulation(config)
+        if config.persist:
+            run_id = result.run.run_id
+            self.store.put_many("agents", [(a.agent_id, _dump(a)) for a in result.agents])
+            self.store.put_many("raw_events", [(e.event_id, _dump(e)) for e in result.events])
+            self.store.put("runs", run_id, _dump(result.run))
+            if config.auto_pipeline:
+                self.run_all(run_id)
+                result.run = self.get_run(run_id)
+        return result
+
+    def collect(self, run_id: str | None, events: list[Any] | None = None, persist: bool = True) -> CollectionResult:
+        run = self.get_run(run_id) if run_id else None
+        agents = self.agents(run_id) if run_id else []
+        raw = events if events is not None else [_dump(e) for e in self.raw_events(run_id)] if run_id else []
+        result = collect(raw, run_id=run_id, agents=agents)
+        if persist and run is not None:
+            self._invalidate("collected", run_id)
+            self._replace("normalized_events", run_id, [(e.event_id, _dump(e)) for e in result.events])
+            self._mark(run, "collected", normalized_events=len(result.events), collector_errors=len(result.report.errors),
+                       duplicates=result.report.duplicates, alerts=0, responses=0)
+        return result
+
+    def detect(self, run_id: str, persist: bool = True) -> DetectionResult:
+        run = self.get_run(run_id)
+        events = self.normalized_events(run_id)
+        if not events:
+            raise ValueError("no normalized events for this run; run the Event Collector first")
+        agents = self.agents(run_id)
+        alerts = run_rules(run_id, events, agents, self.rules())
+        graph = build_graph(run_id, events, agents, alerts)
+        if persist:
+            self._invalidate("detected", run_id)
+            self._replace("alerts", run_id, [(a.alert_id, _dump(a)) for a in alerts])
+            self._mark(run, "detected", alerts=len(alerts), responses=0)
+        return DetectionResult(run_id=run_id, alerts=alerts, graph=graph)
+
+    def graph(self, run_id: str) -> DetectionResult:
+        events, alerts = self.normalized_events(run_id), self.alerts(run_id)
+        return DetectionResult(run_id=run_id, alerts=alerts, graph=build_graph(run_id, events, self.agents(run_id), alerts))
+
+    def respond(self, run_id: str, policy: ResponsePolicy | None = None, persist: bool = True) -> ResponseResult:
+        run = self.get_run(run_id)
+        if "detected" not in run.stages:
+            raise ValueError("no detection results for this run; run Threat Detection first")
+        policy = policy or self.policy()
+        alerts = self.alerts(run_id)
+        actions = respond(alerts, self.normalized_events(run_id), policy)
+        if persist:
+            self._replace("response_actions", run_id, [(a.response_id, _dump(a)) for a in actions])
+            status = {a.alert_id: alert_status_after(a) for a in actions}
+            for al in alerts:
+                al.status = status.get(al.alert_id, al.status)
+            if alerts:
+                self.store.put_many("alerts", [(a.alert_id, _dump(a)) for a in alerts])
+            self._mark(run, "responded", responses=len(actions))
+        return ResponseResult(run_id=run_id, policy=policy, actions=actions)
+
+    def evaluate(self, run_id: str, persist: bool = True) -> EvaluationResult:
+        run = self.get_run(run_id)
+        result = evaluate(run, self.agents(run_id), self.normalized_events(run_id), self.alerts(run_id), self.responses(run_id))
+        if persist:
+            self.store.put("evaluations", result.evaluation_id, _dump(result))
+            run.stages["evaluated"] = now_iso()
+            self.store.put("runs", run.run_id, _dump(run))
+        return result
+
+    def run_all(self, run_id: str) -> Run:
+        self.collect(run_id)
+        self.detect(run_id)
+        self.respond(run_id)
+        self.evaluate(run_id)
+        return self.get_run(run_id)
+
+    def suite(self, req: SuiteRequest) -> SuiteResult:
+        """Run labeled scenarios in memory across drop rates; only the summary is persisted."""
+        if len(req.scenario_ids) * len(req.drop_rates) * len(req.seeds) > 60:
+            raise ValueError("suite too large: limit scenarios x drop_rates x seeds to 60 runs")
+        policy = self.policy()
+        rules = self.rules()
+        results = []
+        for scenario_id in req.scenario_ids:
+            for drop in req.drop_rates:
+                for seed in req.seeds:
+                    sim = run_simulation(ScenarioConfig(scenario_id=scenario_id, agent_count=req.agent_count, seed=seed,
+                                                        gateway_mode=req.gateway_mode, drop_rate=drop, persist=False))
+                    events = collect([_dump(e) for e in sim.events], run_id=sim.run.run_id, agents=sim.agents).events
+                    alerts = run_rules(sim.run.run_id, events, sim.agents, rules)
+                    actions = respond(alerts, events, policy)
+                    results.append(evaluate(sim.run, sim.agents, events, alerts, actions))
+        created = now_iso()
+        suite = SuiteResult(
+            evaluation_id="suite-" + hashlib.sha1(created.encode()).hexdigest()[:10],
+            created_at=created,
+            config=req,
+            rows=aggregate(results),
+            results=results,
+        )
+        if req.persist:
+            self.store.put("evaluations", suite.evaluation_id, {**_dump(suite), "run_id": None, "kind": "suite"})
+        return suite
+
+    def evaluations(self) -> list[dict[str, Any]]:
+        return sorted(self.store.list("evaluations"), key=lambda d: d.get("created_at", ""), reverse=True)
+
+    def dashboard(self, run_id: str) -> Dashboard:
+        run = self.get_run(run_id)
+        agents = self.agents(run_id)
+        events = self.normalized_events(run_id)
+        alerts = self.alerts(run_id)
+        responses = self.responses(run_id)
+        graph = build_graph(run_id, events, agents, alerts)
+        flagged_events: dict[str, set[str]] = {}
+        flagged_rules: dict[str, set[str]] = {}
+        for al in alerts:
+            for aid in al.agent_ids:
+                flagged_events.setdefault(aid, set()).update(al.event_ids)
+                flagged_rules.setdefault(aid, set()).add(al.rule_id)
+        roles = {a.agent_id: a.role for a in agents}
+        alerted_events = {eid for al in alerts for eid in al.event_ids}
+        timeline = [
+            {"event_id": e.event_id, "agent_id": e.agent_id, "timestamp": e.timestamp, "event_type": e.event_type,
+             "status": e.status, "summary": e.summary, "flagged": e.event_id in alerted_events}
+            for e in events
+        ]
+        evaluation = evaluate(run, agents, events, alerts, responses) if events else None
+        return Dashboard(
+            run=run,
+            totals={"agents": len(agents), "raw_events": run.counts.get("raw_events", 0), "events": len(events),
+                    "threats": len(alerts), "responses": len(responses), "flagged_agents": len(flagged_events)},
+            response_outcomes=dict(Counter(r.outcome for r in responses)),
+            severity_counts=dict(Counter(a.severity for a in alerts)),
+            graph=graph,
+            timeline=timeline,
+            flagged_agents=[{"agent_id": aid, "role": roles.get(aid), "rule_ids": sorted(flagged_rules[aid]),
+                             "event_ids": sorted(eids)} for aid, eids in sorted(flagged_events.items())],
+            evaluation=evaluation,
+        )

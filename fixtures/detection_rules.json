@@ -1,0 +1,52 @@
+[
+  {
+    "rule_id": "SG-001",
+    "name": "Unauthorized resource access",
+    "description": "An agent touched a restricted resource that its role is not permitted to use (attempted or completed).",
+    "severity": "high",
+    "recommended_action": "block",
+    "enabled": true,
+    "params": {
+      "restricted_resources": [
+        "data/customer_pii",
+        "secrets/api_keys"
+      ]
+    }
+  },
+  {
+    "rule_id": "SG-002",
+    "name": "External data transfer",
+    "description": "Data sent to an external destination that is not on the allowlist. Critical-path when the data is restricted.",
+    "severity": "high",
+    "recommended_action": "block",
+    "enabled": true,
+    "params": {
+      "external_prefix": "external:",
+      "allowlist": [
+        "external:approved-partner-api"
+      ],
+      "restricted_resources": [
+        "data/customer_pii",
+        "secrets/api_keys"
+      ]
+    }
+  },
+  {
+    "rule_id": "SG-003",
+    "name": "Coordinated leakage chain",
+    "description": "Restricted data read by one agent, handed to other agents via messages carrying a data_ref, then sent externally by a different agent within the correlation window.",
+    "severity": "critical",
+    "recommended_action": "pause",
+    "enabled": true,
+    "params": {
+      "window_seconds": 600,
+      "restricted_resources": [
+        "data/customer_pii",
+        "secrets/api_keys"
+      ],
+      "allowlist": [
+        "external:approved-partner-api"
+      ]
+    }
+  }
+]
