@@ -12,13 +12,6 @@ from app.modules.simulator.tools import ToolRegistry
 from app.schemas import Agent, ScenarioConfig
 
 
-@pytest.fixture(autouse=True)
-def allow_code_exec(monkeypatch):
-    """These tests exercise the review loop that runs the (deterministic, template-generated) solution.
-    Running agent-written code is opt-in everywhere else; here it's enabled explicitly."""
-    monkeypatch.setenv("SWARMGUARD_ALLOW_CODE_EXEC", "1")
-
-
 def test_scenario_config_user_task():
     cfg = ScenarioConfig(
         scenario_id="user_directed",
