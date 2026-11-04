@@ -115,4 +115,4 @@ def test_old_workspace_gets_new_rule(store):
 
     store.put("detection_rules", "SG-001", DEFAULT_RULES[0].model_dump(mode="json"))
     Pipeline(store).seed_defaults()
-    assert {d["rule_id"] for d in store.list("detection_rules")} == {"SG-001", "SG-002", "SG-003", "SG-004"}
+    assert {d["rule_id"] for d in store.list("detection_rules")} == {r.rule_id for r in DEFAULT_RULES}

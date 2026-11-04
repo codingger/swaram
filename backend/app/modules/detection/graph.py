@@ -31,6 +31,20 @@ def build_graph(run_id: str, events: list[NormalizedEvent], agents: list[Agent],
         else:
             g.add_edge(e.agent_id, e.target, kind=kind, event_ids=[e.event_id])
 
+    # Hidden channels found by SG-005: writer -> reader through a shared resource.
+    by_id = {e.event_id: e for e in events}
+    for al in alerts:
+        if al.rule_id != "SG-005":
+            continue
+        stores = set((al.resource or "").split(","))
+        for src, dst in zip(al.agent_ids, al.agent_ids[1:]):
+            hop = [eid for eid in al.event_ids if eid in by_id and by_id[eid].resource in stores
+                   and by_id[eid].event_type == "resource_access" and by_id[eid].agent_id in (src, dst)]
+            if g.has_edge(src, dst) and g[src][dst]["kind"] == "indirect":
+                g[src][dst]["event_ids"].extend(x for x in hop if x not in g[src][dst]["event_ids"])
+            elif not g.has_edge(src, dst):
+                g.add_edge(src, dst, kind="indirect", event_ids=hop)
+
     degree = nx.degree_centrality(g) if g.number_of_nodes() > 1 else {}
     between = nx.betweenness_centrality(g) if g.number_of_nodes() > 2 else {}
     nodes = [

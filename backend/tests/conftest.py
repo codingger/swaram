@@ -24,6 +24,36 @@ def normalize(sim):
     return collect([e.model_dump(mode="json") for e in sim.events], run_id=sim.run.run_id, agents=sim.agents).events
 
 
+def inject(steps: list[dict], scenario: str = "normal_collaboration", agents: int = 5, seed: int = 7, gap_s: float = 5.0):
+    """A clean simulated run plus synthetic events appended after it, then normalized.
+
+    Each step: {"role", "event_type", "action", "resource"?, "target"?, "status"?, "payload"?}. Roles map to the
+    first agent with that role. Returns (sim, normalized_events, injected_event_ids).
+    """
+    from datetime import timedelta
+
+    from app.timeutil import iso, parse_iso
+
+    sim = simulate(scenario, agents=agents, seed=seed)
+    raw = [e.model_dump(mode="json") for e in sim.events]
+    t = parse_iso(raw[-1]["timestamp"])
+    hexid = sim.run.run_id.removeprefix("run-")
+    role_of = {}
+    for a in sim.agents:
+        role_of.setdefault(a.role, a.agent_id)
+    injected = []
+    for step in steps:
+        t += timedelta(seconds=gap_s)
+        seq = len(raw) + 1
+        ev = {"run_id": sim.run.run_id, "event_id": f"evt-{hexid}-{seq:04d}", "agent_id": role_of[step["role"]],
+              "timestamp": iso(t), "event_type": step["event_type"], "action": step["action"],
+              "status": step.get("status", "success"), "resource": step.get("resource"), "target": step.get("target"),
+              "sequence": seq, "payload": step.get("payload", {})}
+        raw.append(ev)
+        injected.append(ev["event_id"])
+    return sim, collect(raw, run_id=sim.run.run_id, agents=sim.agents).events, injected
+
+
 def load_jsonl(name: str) -> list:
     return [json.loads(line) for line in (FIXTURES_DIR / name).read_text(encoding="utf-8").splitlines() if line.strip()]
 

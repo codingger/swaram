@@ -203,7 +203,7 @@ class GraphNode(BaseModel):
 class GraphEdge(BaseModel):
     source: str
     target: str
-    kind: Literal["message", "data_transfer"]
+    kind: Literal["message", "data_transfer", "indirect"]  # indirect = hidden hand-off via shared storage (SG-005)
     count: int
     event_ids: list[str]
 

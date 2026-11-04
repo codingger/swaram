@@ -7,6 +7,8 @@ const ROLE_COLOR: Record<string, string> = {
 };
 const RED = "#ff3b30";
 const EDGE = "#c7c7cc";
+const HIDDEN = "#af52de";
+const EDGE_COLOR = { message: EDGE, data_transfer: RED, indirect: HIDDEN } as const;
 
 /** Circular layout of the agent communication graph; external sinks sit on the right. */
 export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | undefined; height?: number }) {
@@ -32,9 +34,9 @@ export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | 
     <div>
       <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Agent communication graph">
         <defs>
-          {["msg", "xfer"].map((k) => (
+          {(Object.keys(EDGE_COLOR) as (keyof typeof EDGE_COLOR)[]).map((k) => (
             <marker key={k} id={`arrow-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill={k === "xfer" ? RED : EDGE} />
+              <path d="M0,0 L10,5 L0,10 z" fill={EDGE_COLOR[k]} />
             </marker>
           ))}
         </defs>
@@ -46,12 +48,12 @@ export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | 
           const x1 = s.x + (dx / len) * off, y1 = s.y + (dy / len) * off, x2 = t.x - (dx / len) * (off + 2), y2 = t.y - (dy / len) * (off + 2);
           // slight curve so reciprocal edges don't overlap
           const mx = (x1 + x2) / 2 - (dy / len) * 12, my = (y1 + y2) / 2 + (dx / len) * 12;
-          const xfer = e.kind === "data_transfer";
+          const hidden = e.kind === "indirect";
           const dim = hover && e.source !== hover && e.target !== hover;
           return (
             <path key={`${e.source}-${e.target}`} d={`M${x1},${y1} Q${mx},${my} ${x2},${y2}`} fill="none"
-              stroke={xfer ? RED : EDGE} strokeWidth={1 + (3 * e.count) / maxCount} strokeOpacity={dim ? 0.12 : 0.9} strokeLinecap="round"
-              markerEnd={`url(#arrow-${xfer ? "xfer" : "msg"})`}>
+              stroke={EDGE_COLOR[e.kind]} strokeWidth={hidden ? 2.5 : 1 + (3 * e.count) / maxCount} strokeOpacity={dim ? 0.12 : 0.9} strokeLinecap="round"
+              strokeDasharray={hidden ? "5 4" : undefined} markerEnd={`url(#arrow-${e.kind})`}>
               <title>{`${e.source} → ${e.target}: ${e.count} ${e.kind}(s)`}</title>
             </path>
           );
@@ -82,6 +84,7 @@ export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | 
         ))}
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-[#ff3b30]" />flagged</span>
         <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded bg-[#ff3b30]" />external transfer</span>
+        <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-[#af52de]" />hidden channel</span>
       </div>
     </div>
   );

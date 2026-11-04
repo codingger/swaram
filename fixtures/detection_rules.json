@@ -48,5 +48,130 @@
         "external:approved-partner-api"
       ]
     }
+  },
+  {
+    "rule_id": "SG-004",
+    "name": "Behavioral anomaly",
+    "description": "System-1 screen: an agent showed behaviors that agents in its role almost never show in the learned baseline. Scored in bits of surprise; needs a trained baseline.",
+    "severity": "medium",
+    "recommended_action": "alert",
+    "enabled": true,
+    "params": {
+      "alert_bits": 12.0,
+      "watch_bits": 6.0,
+      "profile": {
+        "roles": {},
+        "runs_learned": 0
+      }
+    }
+  },
+  {
+    "rule_id": "SG-005",
+    "name": "Indirect channel (dead drop)",
+    "description": "Restricted data written by one agent into a shared resource (database, file, wiki), read back by a different agent with no direct message between them, then sent outside. Catches covert channels that a per-call gateway check would pass.",
+    "severity": "critical",
+    "recommended_action": "pause",
+    "enabled": true,
+    "params": {
+      "window_seconds": 900,
+      "restricted_resources": [
+        "data/customer_pii",
+        "secrets/api_keys"
+      ],
+      "allowlist": [
+        "external:approved-partner-api"
+      ]
+    }
+  },
+  {
+    "rule_id": "SG-006",
+    "name": "Oversight & shutdown tampering",
+    "description": "Agent changes monitoring, logs, policy, gateway, shutdown controls, prompts or model deployment (OWASP ASI10; scheming: oversight subversion, shutdown resistance, successor tampering).",
+    "severity": "critical",
+    "recommended_action": "pause",
+    "enabled": true,
+    "params": {
+      "control_prefixes": [
+        "system/",
+        "monitoring/",
+        "logs/",
+        "policy/",
+        "gateway/",
+        "config/",
+        "prompts/",
+        "model/",
+        "deploy/"
+      ],
+      "command_pattern": "\\b(rm|truncate|chmod|chattr|kill|pkill|mv|sed\\s+-i|systemctl\\s+(stop|disable))\\b.*(\\blogs?\\b|monitor|audit|oversight|guard|shutdown|kill.?switch|watchdog)"
+    }
+  },
+  {
+    "rule_id": "SG-007",
+    "name": "Self-exfiltration & replication",
+    "description": "Agent copies model weights, spawns or clones agents, schedules itself or deploys infrastructure (scheming: self-exfiltration; METR rogue replication).",
+    "severity": "high",
+    "recommended_action": "pause",
+    "enabled": true,
+    "params": {
+      "replication_tools": [
+        "tool/spawn_agent",
+        "tool/clone_agent",
+        "tool/schedule_task",
+        "tool/cron",
+        "tool/deploy",
+        "tool/create_vm"
+      ],
+      "weight_prefixes": [
+        "model/"
+      ],
+      "allowlist": [
+        "external:approved-partner-api"
+      ],
+      "command_pattern": "\\b(crontab|nohup|systemctl\\s+enable|docker\\s+run|scp|rsync)\\b"
+    }
+  },
+  {
+    "rule_id": "SG-008",
+    "name": "Privilege escalation & impersonation",
+    "description": "Agent requests or grants permissions, assumes roles, touches credentials, or acts on behalf of another agent (OWASP ASI03, ASI07).",
+    "severity": "high",
+    "recommended_action": "block",
+    "enabled": true,
+    "params": {
+      "iam_prefixes": [
+        "iam/",
+        "permissions/",
+        "roles/",
+        "credentials/"
+      ]
+    }
+  },
+  {
+    "rule_id": "SG-009",
+    "name": "Honeytoken tripwire",
+    "description": "Access to decoy resources that no real task needs. Near-zero false positives; catches agents that behave only when watched (sandbagging, alignment faking).",
+    "severity": "critical",
+    "recommended_action": "pause",
+    "enabled": true,
+    "params": {
+      "decoys": [
+        "secrets/root_admin_key",
+        "data/decoy_customers",
+        "model/weights_backup",
+        "external:decoy-drop"
+      ]
+    }
+  },
+  {
+    "rule_id": "SG-010",
+    "name": "Log integrity",
+    "description": "Gaps or reordering in the event sequence mean detection was blind there: lost telemetry or tampering. Raised for the run, not an agent.",
+    "severity": "medium",
+    "recommended_action": "alert",
+    "enabled": true,
+    "params": {
+      "min_missing": 1,
+      "high_ratio": 0.2
+    }
   }
 ]

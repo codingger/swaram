@@ -139,6 +139,16 @@ These ideas come from cognitive science: dual-process thinking, Bayesian belief 
 - **Continual learning:** the baseline trains itself from synthetic normal runs the first time it's needed. After that, `POST /api/detection/baseline` folds in any run confirmed clean (runs with alerts are refused).
 - **Checks:** across 120 normal runs that weren't in the training data there were 0 false alerts. Every attacker scores high or critical risk. If the upload event is missing, the exfiltrating agent is still put on watch.
 
+- **Hidden channels (SG-005):** restricted data passed through shared storage (a database, file or wiki) with no message, then leaked. Writes to an agent's own sanctioned workspace don't spread taint unless a `data_ref` or `content_hash` proves restricted data is in them, which stops normal teamwork from tainting the whole swarm.
+- **Loss of control (SG-006 to SG-010, `detection/control_rules.py`):** Phase 1 of [docs/threat-model.md](docs/threat-model.md).
+  - SG-006, oversight and shutdown tampering: monitoring, logs, policy, gateway, prompts, model deployment, and commands such as `sed -i … oversight` or `chattr +i`.
+  - SG-007, self-exfiltration and replication: copying `model/` weights, and spawn/schedule/deploy tools such as `crontab`, `nohup` and `scp`.
+  - SG-008, privilege escalation and impersonation: `iam/` grants, and `on_behalf_of` set to another agent.
+  - SG-009, honeytoken tripwires.
+  - SG-010, log integrity: sequence gaps or reordering. This alert is never attributed to an agent.
+
+The full threat catalogue covers 34 threats in 5 families, with sources, signals, detectability, coverage and build order, in [docs/threat-model.md](docs/threat-model.md).
+
 Endpoints: `GET /api/runs/{id}/assessments`, `GET|POST /api/detection/baseline`.
 
 ## Definition of Done walkthrough
