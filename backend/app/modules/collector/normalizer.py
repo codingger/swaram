@@ -81,6 +81,21 @@ def summarize(e: dict[str, Any], role: str | None) -> str:
     return f"{who} {et}:{action} [{status}]"
 
 
+def from_canonical(raw: dict[str, Any]) -> dict[str, Any]:
+    """Accept the simulator's canonical 12-field export: `details` is the payload, and `details.telemetry` carries
+    sequence + gateway_decision. Internal-format events pass through unchanged."""
+    if "payload" in raw or not isinstance(raw.get("details"), dict):
+        return raw
+    details = dict(raw["details"])
+    telemetry = details.pop("telemetry", None) or {}
+    out = {k: v for k, v in raw.items() if k not in ("details", "schema_version", "source")}
+    out["payload"] = details
+    out.setdefault("sequence", telemetry.get("sequence", 0))
+    if "gateway_decision" in telemetry:
+        out.setdefault("gateway_decision", telemetry["gateway_decision"])
+    return out
+
+
 def collect(raw_events: list[Any], *, run_id: str | None = None, agents: list[Agent] | None = None) -> CollectionResult:
     registry = {a.agent_id: a for a in agents or []}
     errors: list[CollectorIssue] = []
@@ -101,7 +116,7 @@ def collect(raw_events: list[Any], *, run_id: str | None = None, agents: list[Ag
             errors.append(CollectorIssue(index=idx, event_id=event_id, code="missing_field", message=f"missing required field(s): {', '.join(missing)}"))
             continue
         try:
-            ev = RawEvent.model_validate(raw)
+            ev = RawEvent.model_validate(from_canonical(raw))
         except ValidationError as exc:
             errors.append(CollectorIssue(index=idx, event_id=event_id, code="schema_error", message=exc.errors()[0]["msg"]))
             continue

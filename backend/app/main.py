@@ -126,6 +126,9 @@ def run_pipeline(run_id: str, p: Pipeline = P):
 # ------------------------------------------------------------------ modules
 @app.post("/api/simulate")
 def simulate(config: ScenarioConfig, p: Pipeline = P):
+    if config.workspace_dir:
+        # Agents write files into the workspace; only local scripts may choose where that is on disk.
+        raise HTTPException(400, "workspace_dir can't be set through the API")
     return p.simulate(config)
 
 

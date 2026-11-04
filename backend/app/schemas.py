@@ -52,6 +52,8 @@ class ScenarioConfig(BaseModel):
         "off", description="Stream every event to Threat Detection as it happens; 'contain' also pauses risky agents")
     pause_at: float = Field(0.6, ge=0.2, le=0.99, description="Risk at which live containment pauses an agent")
     persist: bool = True
+    user_task: Optional[str] = Field(None, description="User-provided task description for autonomous collaboration")
+    workspace_dir: Optional[str] = Field(None, description="Path to persistent workspace directory on disk")
 
 
 class Agent(BaseModel):

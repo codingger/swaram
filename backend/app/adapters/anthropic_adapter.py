@@ -48,3 +48,38 @@ class AnthropicAdapter:
             return text or self._fallback.compose_message(sender_role, recipient_role, intent, topic)
         except (httpx.HTTPError, ValueError):
             return self._fallback.compose_message(sender_role, recipient_role, intent, topic)
+
+    def generate_response(
+        self,
+        prompt: str,
+        *,
+        system_instruction: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """General response generation for agent decisions and freeform synthesis."""
+        if self.calls_left <= 0:
+            return self._fallback.generate_response(prompt, system_instruction=system_instruction)
+        self.calls_left -= 1
+        body: dict = {
+            "model": self.model,
+            "max_tokens": max_tokens or 150,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system_instruction:
+            body["system"] = system_instruction
+        if temperature is not None:
+            body["temperature"] = temperature
+        try:
+            resp = httpx.post(
+                API_URL,
+                headers={"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+                json=body,
+                timeout=self.timeout,
+            )
+            resp.raise_for_status()
+            blocks = resp.json().get("content", [])
+            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+            return text or self._fallback.generate_response(prompt, system_instruction=system_instruction)
+        except (httpx.HTTPError, ValueError):
+            return self._fallback.generate_response(prompt, system_instruction=system_instruction)

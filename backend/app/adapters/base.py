@@ -13,7 +13,20 @@ TEMPLATES = {
 class AgentAdapter(Protocol):
     name: str
 
-    def compose_message(self, sender_role: str, recipient_role: str, intent: str, topic: str) -> str: ...
+    def compose_message(self, sender_role: str, recipient_role: str, intent: str, topic: str) -> str:
+        """Synthesize message body text for agent-to-agent communication."""
+        ...
+
+    def generate_response(
+        self,
+        prompt: str,
+        *,
+        system_instruction: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """General response-generation interface for LLM perception, tool selection, and reasoning."""
+        ...
 
 
 class DeterministicAdapter:
@@ -21,3 +34,14 @@ class DeterministicAdapter:
 
     def compose_message(self, sender_role: str, recipient_role: str, intent: str, topic: str) -> str:
         return TEMPLATES.get(intent, "{topic}").format(role=recipient_role, topic=topic)
+
+    def generate_response(
+        self,
+        prompt: str,
+        *,
+        system_instruction: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Deterministic response generation for offline testing and baseline runs."""
+        return f"[deterministic response to: {prompt[:40]}]"

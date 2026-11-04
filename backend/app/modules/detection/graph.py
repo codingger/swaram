@@ -5,6 +5,7 @@ from collections import Counter
 
 import networkx as nx
 
+from app.modules.detection.baseline import is_send
 from app.schemas import Agent, AgentGraph, Alert, GraphEdge, GraphNode, NormalizedEvent
 
 
@@ -17,7 +18,7 @@ def build_graph(run_id: str, events: list[NormalizedEvent], agents: list[Agent],
     activity = Counter(e.agent_id for e in events)
 
     for e in events:
-        if e.event_type == "message" and e.target:
+        if is_send(e) and e.target:
             kind = "message"
         elif e.event_type == "data_transfer" and e.target:
             kind = "data_transfer"
