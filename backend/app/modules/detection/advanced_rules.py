@@ -49,6 +49,9 @@ def out_of_policy(e: NormalizedEvent, registry: dict[str, Agent], params: dict) 
         return True
     if _unapproved_external(e, set(params.get("allowlist", EXTERNAL_ALLOWLIST))):
         return True
+    ref = e.payload.get("data_ref")
+    if baseline.is_send(e) and ref in restricted and e.target in registry and ref not in registry[e.target].permissions:
+        return True  # handing restricted data to a teammate who may not hold it
     return _starts(e.resource, params.get("sensitive_prefixes", SENSITIVE_PREFIXES)) and e.resource not in perms
 
 
