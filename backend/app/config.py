@@ -48,7 +48,7 @@ def get_settings() -> Settings:
         firebase_project_id=os.getenv("FIREBASE_PROJECT_ID") or None,
         llm_provider=os.getenv("SWARMGUARD_LLM_PROVIDER", "deterministic").lower(),
         llm_model=os.getenv("SWARMGUARD_LLM_MODEL", "claude-haiku-5-5"),
-        llm_max_calls=int(os.getenv("SWARMGUARD_LLM_MAX_CALLS", "20")),
+        llm_max_calls=int(os.getenv("SWARMGUARD_LLM_MAX_CALLS", "80")),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
         gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
         cors_origins=[o.strip() for o in os.getenv("SWARMGUARD_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()],

@@ -24,6 +24,14 @@ def is_send(e: NormalizedEvent) -> bool:
     return e.event_type == "message" and e.action != "receive"
 
 
+def scope(resource: str | None) -> str | None:
+    """A resource's area: its first two path levels ('repo/src/auth.py' -> 'repo/src').
+
+    Model-driven agents name individual files; the policy and the baseline reason about areas.
+    """
+    return "/".join(resource.split("/")[:2]) if resource and "/" in resource else resource
+
+
 def behavior_key(e: NormalizedEvent) -> str:
     """Structured description of what an agent did. Free text is never used."""
     if e.event_type == "message" and e.action == "receive":
@@ -32,11 +40,11 @@ def behavior_key(e: NormalizedEvent) -> str:
         ref = e.payload.get("data_ref")
         return f"message:send{f':data_ref={ref}' if ref else ''}"
     if e.event_type == "data_transfer":
-        return f"data_transfer:{e.action}:{e.resource}->{e.target}"
+        return f"data_transfer:{e.action}:{scope(e.resource)}->{e.target}"
     if e.event_type == "resource_access":
-        return f"resource_access:{e.action}:{e.resource}"
+        return f"resource_access:{e.action}:{scope(e.resource)}"
     if e.event_type == "tool_call":
-        return f"tool_call:{e.resource or e.action}"
+        return f"tool_call:{scope(e.resource) or e.action}"
     return f"{e.event_type}:{e.action}"
 
 
@@ -52,7 +60,8 @@ def agent_behaviors(events: list[NormalizedEvent]) -> dict[str, dict[str, list[s
 
 # v2: "pairs"; v3: "msg_stats"; v4: "identities" (per-agent history);
 # v5: inbox reads keyed as message:receive + member 1's simulator, so baselines saved before must retrain.
-PROFILE_VERSION = 5
+# v6: resources keyed by area (scope()) so AI agents naming individual files aren't "never seen before".
+PROFILE_VERSION = 6
 
 
 def empty_profile() -> dict:

@@ -408,3 +408,10 @@ SCENARIO_ATTACKS: dict[str, Callable[[AgentRunner, list[Agent]], list[Agent]]] =
 }
 
 SCENARIOS_BY_ID: dict[str, Scenario] = {s.scenario_id: s for s in SCENARIOS}
+
+# Prompt-injection tests for AI mode (registered last so either import order works).
+from app.modules.simulator.injections import INJECTION_ATTACKS, INJECTION_SCENARIOS  # noqa: E402
+
+SCENARIOS.extend(INJECTION_SCENARIOS)
+SCENARIO_ATTACKS.update(INJECTION_ATTACKS)
+SCENARIOS_BY_ID.update({s.scenario_id: s for s in INJECTION_SCENARIOS})

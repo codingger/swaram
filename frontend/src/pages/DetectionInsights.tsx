@@ -191,10 +191,11 @@ export function BaselineCard({ runId, runHasAlerts, onStatus, onChanged }: {
   const s = summary.data;
   const learned = !!(runId && s?.learned_run_ids.includes(runId));
 
-  async function train(source: "synthetic" | "run") {
+  async function train(source: "synthetic" | "run", confirmClean = false) {
+    if (confirmClean && !window.confirm("Learn this run as normal even though it has alerts? Only do this if you reviewed the alerts and they are false positives (for example the first runs of AI-mode agents).")) return;
     setBusy(source);
     try {
-      const res = await api.trainBaseline(source === "run" ? { source, run_id: runId ?? undefined } : { source });
+      const res = await api.trainBaseline(source === "run" ? { source, run_id: runId ?? undefined, confirm_clean: confirmClean } : { source });
       summary.setData(res);
       onChanged();
       onStatus({ kind: "success", message: source === "run"
@@ -234,6 +235,12 @@ export function BaselineCard({ runId, runHasAlerts, onStatus, onChanged }: {
             title={runHasAlerts ? "Only runs with no alerts can be learned" : learned ? "Already learned" : "Add this run to the baseline"}>
             Learn from this run
           </Button>
+          {runHasAlerts && !learned && (
+            <Button variant="ghost" busy={busy === "run"} disabled={!runId} onClick={() => train("run", true)}
+              title="Reviewed: the alerts on this run are false positives">
+              Alerts were false positives: learn anyway
+            </Button>
+          )}
           <Button variant="ghost" busy={busy === "synthetic"} onClick={() => train("synthetic")}>Retrain from scratch</Button>
         </div>
         <p className="text-[12px] text-faint">

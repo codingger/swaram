@@ -47,6 +47,8 @@ class ScenarioConfig(BaseModel):
     gateway_mode: GatewayMode = "monitor"
     drop_rate: float = Field(0.0, ge=0.0, le=0.9, description="Fraction of events to drop (missing-data tests)")
     agent_backend: str = Field("deterministic", description="Adapter that writes message text")
+    agent_mode: Literal["scripted", "autonomous"] = Field(
+        "scripted", description="scripted: fixed normal work; autonomous: each worker's model decides its actions")
     auto_pipeline: bool = Field(False, description="Run collect -> detect -> respond automatically")
     live_guard: Literal["off", "detect", "contain"] = Field(
         "off", description="Stream every event to Threat Detection as it happens; 'contain' also pauses risky agents")
@@ -94,6 +96,7 @@ class Run(BaseModel):
     gateway_mode: GatewayMode
     drop_rate: float
     agent_backend: str
+    agent_mode: str = "scripted"
     created_at: str
     base_time: str
     stages: dict[str, str] = Field(default_factory=dict)  # stage -> completed_at
@@ -323,6 +326,8 @@ class ReplayRequest(BaseModel):
 class BaselineTrainRequest(BaseModel):
     source: Literal["synthetic", "run"] = "synthetic"
     run_id: Optional[str] = Field(None, description="With source=run: a run confirmed clean to fold into the baseline")
+    confirm_clean: bool = Field(False, description="With source=run: a reviewer confirms this run's alerts were false "
+                                "positives, so it may be learned anyway (e.g. the first runs of a new kind of agent)")
 
 
 # ---------------------------------------------------------------------------
