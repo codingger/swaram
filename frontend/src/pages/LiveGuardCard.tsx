@@ -3,7 +3,7 @@ import { api } from "../api";
 import { Badge, Button, Card, Empty, Field, Segmented, Stat, inputCls } from "../components/ui";
 import { shortId } from "../lib/format";
 import { useAppState, useRunData } from "../state";
-import type { AgentCount, GatewayMode, LiveReport } from "../types";
+import type { AgentCount, GatewayMode, LiveReport, ReplayCase } from "../types";
 
 type Step = { seq: number; kind: "detect" | "contain"; title: string; detail: string; badge: string };
 
@@ -18,24 +18,54 @@ function timeline(r: LiveReport): Step[] {
   return steps.sort((a, b) => a.seq - b.seq || (a.kind === "detect" ? -1 : 1));
 }
 
+/** Did the replay come out as the benchmark expects? */
+function ReplayVerdict({ replayed, report }: { replayed: ReplayCase; report: LiveReport }) {
+  const fired = new Set(report.detections.map((d) => d.rule_id));
+  const flagged = report.detections.some((d) => d.agent_ids.length);
+  const rows = replayed.benign
+    ? [{ ok: !flagged, text: "Benign look-alike: no agent flagged" }]
+    : [
+        { ok: replayed.expect_rules.some((r) => fired.has(r)), text: `Expected rule ${replayed.expect_rules.join(" or ")} fired` },
+        { ok: Number(report.metrics.detected_live) >= 1, text: `Culprit (${replayed.culprits.join(" + ")}) flagged live` },
+      ];
+  return (
+    <div className="flex flex-wrap gap-2">
+      <span className="rounded-full bg-black/[0.05] px-3 py-1 text-[12px] text-muted">{replayed.threat} · {replayed.name}</span>
+      {rows.map((r) => (
+        <span key={r.text} className={`rounded-full px-3 py-1 text-[12px] font-medium ${r.ok ? "bg-[#34c759]/14 text-[#1f7a37]" : "bg-[#ff3b30]/10 text-[#d70015]"}`}>
+          {r.ok ? "✓" : "✗"} {r.text}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Run a scenario with detection streaming alongside it, and show what was caught and stopped in time. */
 export function LiveGuardCard() {
-  const { selectedRunId, selectRun, refreshRuns } = useAppState();
+  const { selectedRunId, selectRun, refreshRuns, runs } = useAppState();
   const stored = useRunData(api.liveReport, selectedRunId);
-  const [scenario, setScenario] = useState("coordinated_leakage");
+  const catalog = useRunData(() => api.replayCases(), "replay-cases");
+  const [scenario, setScenario] = useState("builtin:coordinated_leakage");
   const [count, setCount] = useState<AgentCount>(5);
   const [mode, setMode] = useState<"contain" | "detect">("contain");
   const [gateway, setGateway] = useState<GatewayMode>("monitor");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const report = stored.data;
+  const isReplay = scenario.startsWith("replay:");
+  const cases = catalog.data ?? [];
+  const runScenario = runs.find((r) => r.run_id === report?.run_id)?.scenario_id ?? "";
+  const replayed = runScenario.startsWith("replay:") ? cases.find((c) => `replay:${c.name}` === runScenario) : undefined;
 
   async function run() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.simulate({ scenario_id: scenario, agent_count: count, seed: 7, gateway_mode: gateway, drop_rate: 0,
-        agent_backend: "deterministic", auto_pipeline: true, live_guard: mode, persist: true });
+      const seed = Math.floor(Math.random() * 1000);  // a different realistic run each time
+      const res = isReplay
+        ? await api.replay({ case: scenario.slice("replay:".length), agent_count: count, seed, live_guard: mode })
+        : await api.simulate({ scenario_id: scenario.slice("builtin:".length), agent_count: count, seed: 7, gateway_mode: gateway,
+            drop_rate: 0, agent_backend: "deterministic", auto_pipeline: true, live_guard: mode, persist: true });
       await refreshRuns();
       selectRun(res.run.run_id);
     } catch (e) {
@@ -54,11 +84,19 @@ export function LiveGuardCard() {
         gets its outbound transfers held. Their next actions are denied <strong>before they execute</strong>.
       </p>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Field label="Scenario">
+        <Field label="Scenario" hint={isReplay ? "Planted into a fresh realistic run at a random point." : undefined}>
           <select className={inputCls} value={scenario} onChange={(e) => setScenario(e.target.value)}>
-            <option value="coordinated_leakage">Coordinated data leakage</option>
-            <option value="unauthorized_access">Unauthorized resource access</option>
-            <option value="normal_collaboration">Normal collaboration</option>
+            <optgroup label="Built-in scenarios">
+              <option value="builtin:coordinated_leakage">Coordinated data leakage</option>
+              <option value="builtin:unauthorized_access">Unauthorized resource access</option>
+              <option value="builtin:normal_collaboration">Normal collaboration</option>
+            </optgroup>
+            <optgroup label={`Attack replays (${cases.filter((c) => !c.benign).length})`}>
+              {cases.filter((c) => !c.benign).map((c) => <option key={c.name} value={`replay:${c.name}`}>{c.threat} · {c.name}</option>)}
+            </optgroup>
+            <optgroup label={`Benign look-alikes (${cases.filter((c) => c.benign).length})`}>
+              {cases.filter((c) => c.benign).map((c) => <option key={c.name} value={`replay:${c.name}`}>{c.name}</option>)}
+            </optgroup>
           </select>
         </Field>
         <Field label="Agents" asDiv>
@@ -67,8 +105,8 @@ export function LiveGuardCard() {
         <Field label="Mode" asDiv>
           <Segmented full value={mode} onChange={setMode} options={[{ value: "contain", label: "Contain" }, { value: "detect", label: "Detect only" }]} />
         </Field>
-        <Field label="Static gateway" hint="Monitor shows what the live guard adds on its own.">
-          <select className={inputCls} value={gateway} onChange={(e) => setGateway(e.target.value as GatewayMode)}>
+        <Field label="Static gateway" hint={isReplay ? "Replays run with the gateway monitoring only." : "Monitor shows what the live guard adds on its own."}>
+          <select className={inputCls} value={isReplay ? "monitor" : gateway} disabled={isReplay} onChange={(e) => setGateway(e.target.value as GatewayMode)}>
             <option value="monitor">monitor</option>
             <option value="enforce">enforce</option>
           </select>
@@ -84,6 +122,7 @@ export function LiveGuardCard() {
         {report && (
           <div className="space-y-6">
             <div className="text-[12px] text-faint">Run <span className="font-mono">{report.run_id}</span> · {report.events_processed} events checked live · mode {report.mode}</div>
+            {replayed && <ReplayVerdict replayed={replayed} report={report} />}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat label="Data left the system" value={m.data_left_the_system ? "Yes" : "No"} tone={m.data_left_the_system ? "danger" : "ok"} />
               <Stat label="Attack actions stopped" value={`${m.attack_actions_blocked_by_pause ?? 0} / ${m.attack_actions ?? 0}`} />

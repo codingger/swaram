@@ -7,6 +7,7 @@ run's previous output so references stay consistent.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
@@ -22,7 +23,7 @@ from app.modules.response.policy import DEFAULT_POLICY, alert_status_after, resp
 from app.modules.simulator.engine import run_simulation
 from app.modules.simulator.world import SCENARIOS
 from app.schemas import (
-    AGENT_COUNTS, Agent, AgentAssessment, Alert, AuditItem, LiveReport, BaselineTrainRequest, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
+    AGENT_COUNTS, Agent, AgentAssessment, Alert, AuditItem, LiveReport, ReplayRequest, RunLabels, BaselineTrainRequest, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
     RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult, SuiteRequest,
     SuiteResult,
 )
@@ -137,6 +138,39 @@ class Pipeline:
     def assessments(self, run_id: str) -> list[AgentAssessment]:
         self.get_run(run_id)
         return assess(run_id, self.normalized_events(run_id), self.agents(run_id), self.alerts(run_id), self.rules())
+
+    def replay(self, req: ReplayRequest) -> SimulationResult:
+        """Plant a benchmark case into a fresh run, stream it through the live guard, save it, run the pipeline."""
+        from app.modules.detection.benchmark import CASES_BY_NAME, plant
+
+        case = CASES_BY_NAME.get(req.case)
+        if case is None:
+            raise ValueError(f"unknown replay case {req.case!r}")
+        run_id = f"run-{uuid.uuid4().hex[:8]}"
+        planted = plant(case, req.agent_count, req.seed, run_id=run_id, salt="replay")
+        sim, timeline = planted.sim, planted.raw
+        live = LiveGuard(self.rules(), req.live_guard, req.pause_at) if req.live_guard != "off" else None
+        if live:
+            live.start(run_id, sim.agents)
+            timeline = live.replay(timeline)
+        events = [RawEvent.model_validate(e) for e in timeline]
+        bad_agents = sorted({planted.slots[s] for s in case.flagged})
+        for a in sim.agents:
+            a.is_malicious = a.agent_id in bad_agents
+        run = sim.run.model_copy(update={
+            "scenario_id": f"replay:{case.name}", "gateway_mode": "monitor", "created_at": now_iso(),
+            "stages": {"simulated": now_iso()}, "counts": {"agents": len(sim.agents), "raw_events": len(events), "dropped_events": 0},
+            "labels": RunLabels(malicious_agent_ids=bad_agents, malicious_event_ids=planted.injected if bad_agents else []),
+        })
+        result = SimulationResult(run=run, agents=sim.agents, events=events, live_report=live.report(run) if live else None)
+        self.store.put_many("agents", [(a.agent_id, _dump(a)) for a in result.agents])
+        self.store.put_many("raw_events", [(e.event_id, _dump(e)) for e in events])
+        self.store.put("runs", run_id, _dump(run))
+        if result.live_report:
+            self.store.put("evaluations", f"live-{run_id}", {**_dump(result.live_report), "kind": "live"})
+        self.run_all(run_id)
+        result.run = self.get_run(run_id)
+        return result
 
     def live_report(self, run_id: str) -> LiveReport | None:
         """None when the run was simulated without the live guard (a normal case, not an error)."""

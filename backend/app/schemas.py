@@ -308,6 +308,16 @@ class LiveReport(BaseModel):
     created_at: str
 
 
+class ReplayRequest(BaseModel):
+    """Plant one labeled attack (or benign look-alike) from the benchmark into a realistic run, live."""
+
+    case: str
+    agent_count: Literal[5, 10, 20] = 5
+    seed: int = 7
+    live_guard: Literal["off", "detect", "contain"] = "contain"
+    pause_at: float = Field(0.6, ge=0.2, le=0.99)
+
+
 class BaselineTrainRequest(BaseModel):
     source: Literal["synthetic", "run"] = "synthetic"
     run_id: Optional[str] = Field(None, description="With source=run: a run confirmed clean to fold into the baseline")

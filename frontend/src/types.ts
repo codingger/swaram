@@ -257,6 +257,15 @@ export interface LiveReport {
   created_at: string;
 }
 
+export interface ReplayCase {
+  name: string;
+  threat: string;
+  benign: boolean;
+  expect_rules: string[];
+  roles: Record<string, string>;
+  culprits: string[];
+}
+
 export interface BenchmarkRow {
   drop_rate: number;
   trials: number;

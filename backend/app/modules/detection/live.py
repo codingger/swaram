@@ -84,6 +84,23 @@ class LiveGuard:
                         agent_id=v.agent_id, role=v.role, paused_at_sequence=event.sequence, paused_at=event.timestamp,
                         risk=v.risk, explanation=v.best_explanation)
 
+    def replay(self, timeline: list[dict]) -> list[dict]:
+        """Stream a recorded timeline through the guard as if it were happening now.
+
+        Each event is gated before it 'executes' (denied if its agent is already contained) and observed after,
+        exactly as the agent runner does live. Returns the timeline as it would have unfolded under the guard.
+        """
+        out = []
+        for raw in timeline:
+            e = dict(raw)
+            reason = self.gate(e["agent_id"], e.get("event_type"), e.get("target"))
+            if reason:
+                e.update(status="denied", gateway_decision="blocked",
+                         payload={**(e.get("payload") or {}), "quarantined": True, "gateway_reason": reason})
+            self.observe(RawEvent.model_validate(e))
+            out.append(e)
+        return out
+
     def _hold_egress(self, e: NormalizedEvent) -> None:
         """Targeted containment: an agent handed restricted data it isn't permitted to hold may keep working,
         but may not send anything outside until a human reviews it. Stops the leak itself, not just what follows."""
