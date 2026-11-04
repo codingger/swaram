@@ -180,10 +180,50 @@ export interface AgentGraph {
   edges: GraphEdge[];
 }
 
+export interface RareBehavior {
+  behavior: string;
+  p: number;
+  bits: number;
+  event_ids: string[];
+}
+
+export interface Hypothesis {
+  hypothesis: string;
+  label: string;
+  score: number;
+  supporting: string[];
+}
+
+export type RiskLevel = "low" | "watch" | "high" | "critical";
+
+export interface AgentAssessment {
+  run_id: string;
+  agent_id: string;
+  role?: string | null;
+  prior: number;
+  risk: number;
+  level: RiskLevel;
+  anomaly_bits: number;
+  rare_behaviors: RareBehavior[];
+  evidence: string[];
+  alert_ids: string[];
+  hypotheses: Hypothesis[];
+  best_explanation?: string | null;
+}
+
+export interface BaselineSummary {
+  trained: boolean;
+  runs_learned: number;
+  learned_run_ids: string[];
+  agents_learned: number;
+  roles: Record<string, { agents: number; behaviors: number }>;
+}
+
 export interface DetectionResult {
   run_id: string;
   alerts: Alert[];
   graph: AgentGraph;
+  assessments: AgentAssessment[];
 }
 
 export interface ResponsePolicy {

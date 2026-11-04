@@ -5,7 +5,8 @@ import { ResultViewer, type Column } from "../components/ResultViewer";
 import { Badge, Button, Card, Empty, OutputSelect, PageHeader, RunSelect, StatusBanner, type Status } from "../components/ui";
 import { shortId } from "../lib/format";
 import { useAppState, useRunData } from "../state";
-import type { Alert, AgentGraph, DetectionRule } from "../types";
+import type { AgentAssessment, Alert, AgentGraph, DetectionRule } from "../types";
+import { AssessmentDetail, BaselineCard, riskColumns } from "./DetectionInsights";
 
 const columns: Column<Alert>[] = [
   { key: "severity", label: "severity", render: (a) => <Badge value={a.severity} /> },
@@ -24,14 +25,18 @@ export function DetectionPage() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ alerts: Alert[]; graph: AgentGraph } | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ alerts: Alert[]; graph: AgentGraph; assessments: AgentAssessment[] } | null>(null);
   const alerts = useRunData(api.alerts, selectedRunId);
   const graph = useRunData(api.graph, selectedRunId);
+  const assessments = useRunData(api.assessments, selectedRunId);
   const rules = useRunData(() => api.rules(), "rules");
 
   const shownAlerts = preview?.alerts ?? alerts.data;
   const shownGraph = preview?.graph ?? graph.data;
+  const shownRisk = preview?.assessments ?? assessments.data;
   const current = shownAlerts?.find((a) => a.alert_id === selected) ?? null;
+  const currentAgent = shownRisk?.find((a) => a.agent_id === selectedAgent) ?? shownRisk?.[0] ?? null;
 
   async function run() {
     if (!selectedRunId) return setStatus({ kind: "error", message: "Select a run first." });
@@ -41,12 +46,15 @@ export function DetectionPage() {
       const res = await api.detect(selectedRunId, persist);
       if (persist) {
         setPreview(null);
-        await Promise.all([alerts.reload(), graph.reload(), refreshRuns()]);
+        await Promise.all([alerts.reload(), graph.reload(), assessments.reload(), refreshRuns()]);
       } else {
-        setPreview({ alerts: res.alerts, graph: res.graph });
+        setPreview({ alerts: res.alerts, graph: res.graph, assessments: res.assessments });
       }
       setSelected(res.alerts[0]?.alert_id ?? null);
-      setStatus({ kind: res.alerts.length ? "warning" : "success", message: `${res.alerts.length} alert(s) generated${persist ? " and saved" : " (preview)"}.` });
+      setSelectedAgent(res.assessments[0]?.agent_id ?? null);
+      const risky = res.assessments.filter((a) => a.level === "high" || a.level === "critical").length;
+      setStatus({ kind: res.alerts.length ? "warning" : "success",
+        message: `${res.alerts.length} alert(s) generated${persist ? " and saved" : " (preview)"} · ${risky} agent(s) at high or critical risk.` });
     } catch (e) {
       setStatus({ kind: "error", message: (e as Error).message });
     } finally {
@@ -67,7 +75,7 @@ export function DetectionPage() {
   return (
     <div className="space-y-5">
       <PageHeader step={3} module="detection" title="Threat Detection"
-        description="Rule-based detection over normalized events: unauthorized access, external transfers and multi-agent leakage chains. Every alert cites the event IDs that prove it; message text is never used as evidence." />
+        description="Two layers, like fast and slow thinking: a quick behavioral screen against a learned baseline, and explicit rules for unauthorized access, external transfers and leak chains. Each agent gets a risk score and a best explanation. Every alert cites its event IDs; message text is never evidence." />
       <StatusBanner status={status} onClose={() => setStatus(null)} />
 
       <div className="grid gap-5 lg:grid-cols-3">
@@ -126,6 +134,16 @@ export function DetectionPage() {
         <Card title="Agent relationship graph">
           <GraphView graph={shownGraph} />
         </Card>
+      </div>
+
+      <ResultViewer title={preview ? "Agent risk ranking (preview)" : "Agent risk ranking"} rows={shownRisk} columns={riskColumns}
+        filename={`agent_risk_${selectedRunId}`} rowKey={(a) => a.agent_id} selectedKey={currentAgent?.agent_id ?? null}
+        onRowClick={(a) => setSelectedAgent(a.agent_id)} empty="Run detection to rank agents by risk." />
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <AssessmentDetail a={currentAgent} />
+        <BaselineCard runId={selectedRunId} runHasAlerts={!!shownAlerts?.length} onStatus={setStatus}
+          onChanged={() => { rules.reload(); }} />
       </div>
     </div>
   );

@@ -109,6 +109,9 @@ normalized_events ──► [3] Detection ──► alerts (+ NetworkX agent gra
                  SG-001 unauthorized restricted access (uses agent permissions)
                  SG-002 transfer to a non-allowlisted external destination
                  SG-003 leakage chain: restricted read → message(data_ref) → … → external transfer
+                 SG-004 behavioral anomaly (System 1): surprise in bits vs a learned per-role baseline
+                 Per-agent risk: Bayesian posterior from a 2% prior × one likelihood ratio per rule + anomaly
+                 Best explanation: ranked hypotheses (insider, rogue, colluding member, misconfiguration, benign)
                  Every alert lists event_ids + evidence. Message text is never evidence.
                      ▼
 alerts + policy ──► [4] Response ──► response_actions (linked by alert_id), alert.status updated
@@ -124,6 +127,19 @@ everything ──► [5] Dashboard & Evaluation ──► evaluations
 
 Re-running a stage replaces that run's output and clears downstream outputs. For example, re-collecting deletes the run's alerts and responses, so references never point at stale events.
 IDs are `run-<hex>`, `agt-<hex>-NN`, `evt-<hex>-NNNN`, `alt-<sha1>` and `rsp-<sha1>`. Alert and response IDs are content hashes, so re-running gives the same IDs.
+
+## Threat Detection: two-layer design
+
+These ideas come from cognitive science: dual-process thinking, Bayesian belief updating, abductive reasoning and continual learning.
+
+- **System 1, fast (`detection/baseline.py`, rule SG-004):** each agent's behaviors (for example `tool_call:tool/shell`) are scored by how rarely agents in the same role show them in a baseline learned from benign runs. The score is `-log2 p` with Laplace smoothing, and only behaviors seen in fewer than 10% of same-role agents count. At 12 or more bits it raises a medium alert; at 6 or more the agent goes on watch.
+- **System 2, slow (`detection/rules.py`, rules SG-001 to SG-003):** explicit, auditable rules.
+- **Risk (`detection/risk.py`):** a Bayesian posterior per agent. Agents are ranked by risk so the riskiest are reviewed first.
+- **Best explanation:** each agent at watch level or above gets ranked hypotheses with the facts that support them.
+- **Continual learning:** the baseline trains itself from synthetic normal runs the first time it's needed. After that, `POST /api/detection/baseline` folds in any run confirmed clean (runs with alerts are refused).
+- **Checks:** across 120 normal runs that weren't in the training data there were 0 false alerts. Every attacker scores high or critical risk. If the upload event is missing, the exfiltrating agent is still put on watch.
+
+Endpoints: `GET /api/runs/{id}/assessments`, `GET|POST /api/detection/baseline`.
 
 ## Definition of Done walkthrough
 

@@ -61,21 +61,27 @@ def test_definition_of_done_flow(client):
     assert col["report"]["valid"] == len(raw)
 
     det = c.post("/api/detect", json={"run_id": run_id}).json()
-    assert {a["rule_id"] for a in det["alerts"]} == {"SG-002", "SG-003"}
+    assert {a["rule_id"] for a in det["alerts"]} == {"SG-002", "SG-003", "SG-004"}
+    assert det["assessments"][0]["level"] == "critical"
 
     policy = c.get("/api/response-policies/default").json()
     policy["mode"] = "enforce"
     resp = c.post("/api/respond", json={"run_id": run_id, "policy": policy}).json()
-    assert all(a["outcome"] == "blocked" for a in resp["actions"])
+    outcomes = {a["alert_id"]: a["outcome"] for a in resp["actions"]}
+    sg4 = next(a["alert_id"] for a in det["alerts"] if a["rule_id"] == "SG-004")
+    assert outcomes.pop(sg4) == "alerted"  # medium anomaly -> human review
+    assert set(outcomes.values()) == {"blocked"}
 
     # Simulate a browser reload: a brand-new store connection on the same database.
     app.dependency_overrides[get_pipeline] = lambda: Pipeline(SQLiteStore(db))
     assert run_id in [r["run_id"] for r in c.get("/api/runs").json()]
     dash = c.get(f"/api/runs/{run_id}/dashboard").json()
-    assert dash["totals"]["threats"] == 2
-    assert dash["response_outcomes"] == {"blocked": 2}
-    assert dash["evaluation"]["recall"] == 1.0
-    assert {a["status"] for a in c.get(f"/api/runs/{run_id}/alerts").json()} == {"contained"}
+    assert dash["totals"]["threats"] == 3
+    assert dash["response_outcomes"] == {"blocked": 2, "alerted": 1}
+    assert dash["evaluation"]["recall"] == 1.0 and dash["evaluation"]["false_positive_rate"] == 0.0
+    assert {a["status"] for a in c.get(f"/api/runs/{run_id}/alerts").json()} == {"contained", "responded"}
+    assert c.get(f"/api/runs/{run_id}/assessments").json()[0]["best_explanation"]
+    assert c.get("/api/detection/baseline").json()["trained"] is True
 
 
 def test_api_errors_and_meta(client):
