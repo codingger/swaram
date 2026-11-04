@@ -51,7 +51,19 @@ DEFAULT_RULES: list[DetectionRule] = [
         recommended_action="alert",
         params={"alert_bits": 12.0, "watch_bits": 6.0, "profile": baseline.empty_profile()},
     ),
+    DetectionRule(
+        rule_id="SG-005",
+        name="Indirect channel (dead drop)",
+        description="Restricted data written by one agent into a shared resource (database, file, wiki), read back by a "
+        "different agent with no direct message between them, then sent outside. Catches covert channels that a "
+        "per-call gateway check would pass.",
+        severity="critical",
+        recommended_action="pause",
+        params={"window_seconds": 900, "restricted_resources": RESTRICTED_RESOURCES, "allowlist": EXTERNAL_ALLOWLIST},
+    ),
 ]
+
+WRITE_ACTIONS = {"write", "update", "insert", "append", "put", "create", "upload"}
 
 
 def alert_id(run_id: str, rule_id: str, event_ids: list[str]) -> str:
@@ -184,12 +196,76 @@ def rule_behavioral_anomaly(rule: DetectionRule, run_id: str, events: list[Norma
     return alerts
 
 
+def _is_shared_store(resource: str | None, restricted: set[str]) -> bool:
+    return bool(resource) and not resource.startswith("tool/") and resource not in restricted
+
+
+def rule_indirect_channel(rule: DetectionRule, run_id: str, events: list[NormalizedEvent], registry: dict[str, Agent]) -> list[Alert]:
+    """Taint tracking through storage: restricted read -> write R -> another agent reads R -> external send.
+
+    Unlike SG-003 this needs no message between the agents: the shared resource *is* the channel.
+    """
+    window = float(rule.params.get("window_seconds", 900))
+    restricted = set(rule.params.get("restricted_resources", []))
+    allow = set(rule.params.get("allowlist", []))
+    agent_taint: dict[str, _Taint] = {}  # agent -> how restricted data reached it
+    store_taint: dict[str, _Taint] = {}  # shared resource -> who put restricted data there
+    restricted_hashes: set[str] = set()  # content fingerprints seen on restricted reads (DLP-style)
+    alerts, seen = [], set()
+
+    def fresh(t: _Taint, e: NormalizedEvent) -> bool:
+        return not t.events or (parse_iso(e.timestamp) - parse_iso(t.events[0].timestamp)).total_seconds() <= window
+
+    def carries_restricted(e: NormalizedEvent) -> bool:
+        """Writes into an agent's own sanctioned workspace are normal outputs (e.g. an aggregated report) and do
+        not spread taint unless they provably carry restricted data. Writes anywhere else are dead-drop candidates."""
+        sanctioned = e.agent_id in registry and e.resource in registry[e.agent_id].permissions
+        return (not sanctioned or e.payload.get("data_ref") in restricted
+                or e.payload.get("content_hash") in restricted_hashes)
+
+    for e in events:
+        if e.event_type == "resource_access" and e.status == "success":
+            if e.resource in restricted and e.action in READ_ACTIONS:
+                agent_taint[e.agent_id] = _Taint(resource=e.resource, chain=[e.agent_id], events=[e])
+                if e.payload.get("content_hash"):
+                    restricted_hashes.add(e.payload["content_hash"])
+            elif _is_shared_store(e.resource, restricted) and e.action in WRITE_ACTIONS:
+                t = agent_taint.get(e.agent_id)
+                if t and fresh(t, e) and carries_restricted(e):
+                    store_taint[e.resource] = _Taint(resource=t.resource, chain=list(t.chain), events=t.events + [e])
+            elif _is_shared_store(e.resource, restricted) and e.action in READ_ACTIONS:
+                t = store_taint.get(e.resource)
+                # A different agent picking up what a tainted agent left behind = hidden hand-off.
+                if t and e.agent_id not in t.chain and fresh(t, e):
+                    agent_taint[e.agent_id] = _Taint(resource=t.resource, chain=t.chain + [e.agent_id], events=t.events + [e])
+        elif e.event_type == "data_transfer" and (e.target or "").startswith(EXTERNAL_PREFIX) and e.target not in allow:
+            t = agent_taint.get(e.agent_id)
+            if t is None or len(t.chain) < 2 or not fresh(t, e):
+                continue
+            drops = sorted({x.resource for x in t.events if x.event_type == "resource_access" and x.resource not in restricted})
+            key = (tuple(t.chain), e.event_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            reason = (f"Restricted data {t.resource} passed {' -> '.join(t.chain)} through shared resource(s) "
+                      f"{', '.join(drops)} with no direct message, then {e.agent_id} sent it to {e.target} (status {e.status}).")
+            alerts.append(_make_alert(rule, run_id, list(t.chain), t.events + [e], ",".join(drops), reason))
+    return alerts
+
+
 RULE_IMPLS = {
     "SG-001": rule_unauthorized_access,
     "SG-002": rule_external_transfer,
     "SG-003": rule_coordinated_leakage,
     "SG-004": rule_behavioral_anomaly,
+    "SG-005": rule_indirect_channel,
 }
+
+# Loss-of-control rules live in their own module (docs/threat-model.md, Phase 1).
+from app.modules.detection.control_rules import CONTROL_IMPLS, CONTROL_RULES  # noqa: E402
+
+DEFAULT_RULES.extend(CONTROL_RULES)
+RULE_IMPLS.update(CONTROL_IMPLS)
 
 
 def run_rules(run_id: str, events: list[NormalizedEvent], agents: list[Agent], rules: list[DetectionRule] | None = None) -> list[Alert]:

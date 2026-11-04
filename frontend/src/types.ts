@@ -169,7 +169,7 @@ export interface GraphNode {
 export interface GraphEdge {
   source: string;
   target: string;
-  kind: "message" | "data_transfer";
+  kind: "message" | "data_transfer" | "indirect";
   count: number;
   event_ids: string[];
 }
