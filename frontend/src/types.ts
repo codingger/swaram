@@ -290,6 +290,7 @@ export interface BaselineSummary {
   runs_learned: number;
   learned_run_ids: string[];
   agents_learned: number;
+  identities_learned?: number;
   roles: Record<string, { agents: number; behaviors: number }>;
 }
 

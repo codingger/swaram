@@ -196,7 +196,8 @@ def test_repeated_action_loop_and_low_risk():
     hit = only(alerts, "SG-018")
     assert len(hit) == 1 and hit[0].event_ids == ids
     verdict = next(v for v in assess(sim.run.run_id, events, sim.agents, alerts, ADVANCED_RULES) if v.agent_id == agent(sim, "coder"))
-    assert verdict.level == "low"  # a malfunction is not escalated as an attack
+    # A malfunction is watched and explained, not escalated as an attack.
+    assert verdict.level == "watch" and verdict.risk < 0.2 and verdict.hypotheses[0].hypothesis == "malfunction"
 
 
 def test_message_ping_pong():
@@ -307,7 +308,7 @@ def test_best_explanations(steps, hyp, trained):
 
 
 def test_all_phase2_rules_registered():
-    assert PHASE2 == {f"SG-0{i}" for i in range(11, 21)}
+    assert PHASE2 == {f"SG-0{i}" for i in range(11, 21)} | {"SG-025"}  # SG-025 (per-agent drift) lives here too
     assert PHASE2 <= {r.rule_id for r in DEFAULT_RULES}
 
 

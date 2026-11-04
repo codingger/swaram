@@ -218,6 +218,10 @@ export function BaselineCard({ runId, runHasAlerts, onStatus, onChanged }: {
           <dl className="grid grid-cols-2 gap-3">
             <div><dt className="text-[12px] text-faint">Agents learned</dt><dd className="text-[22px] font-semibold tabular-nums">{s.agents_learned}</dd></div>
             <div><dt className="text-[12px] text-faint">Runs learned</dt><dd className="text-[22px] font-semibold tabular-nums">{s.runs_learned}</dd></div>
+            <div className="col-span-2 text-[12px] text-faint">
+              Per-agent histories: <span className="font-medium text-ink">{s.identities_learned ?? 0}</span> agent identities
+              (SG-025 compares each agent with its own past, not just its role)
+            </div>
             <div className="col-span-2 flex flex-wrap gap-1.5">
               {Object.entries(s.roles).map(([role, r]) => (
                 <span key={role} className="rounded-full bg-black/[0.05] px-2.5 py-1 text-[12px] text-muted">{role}: {r.agents} agents · {r.behaviors} behaviors</span>
