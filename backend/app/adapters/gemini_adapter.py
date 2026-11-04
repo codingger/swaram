@@ -36,11 +36,11 @@ from app.adapters.base import DeterministicAdapter
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 DEFAULT_DAILY_BUDGET = 100
 
-DEFAULT_RPM_LIMIT = 60
+DEFAULT_RPM_LIMIT = 14  # free tier: 15/min for Flash-Lite (5/min for 2.5 Flash); stay just under
 
 
 def mask_secret(secret: str | None) -> str:
@@ -130,6 +130,24 @@ class GeminiQuotaTracker:
 
         return True, None
 
+
+    def seconds_until_slot(self) -> float | None:
+        """Seconds until the rate limits allow a call (0 = now). None if the daily budget is spent."""
+        now = time.time()
+        self._refresh_window()
+        if self.daily_calls_used >= self.daily_budget:
+            return None
+        wait = max(0.0, self.cooldown_until - now)
+        if len(self.call_timestamps) >= self.rpm_limit:
+            wait = max(wait, self.call_timestamps[-self.rpm_limit] + 60.0 - now)
+        return wait
+
+    def wait_for_slot(self, max_wait: float) -> None:
+        """Pace calls to the per-minute limit instead of falling back to scripted text mid-run."""
+        wait = self.seconds_until_slot()
+        if wait and wait <= max_wait:
+            logger.info("Gemini rate limit: waiting %.1fs for the next free slot", wait)
+            time.sleep(wait + 0.05)
 
     def record_call(self) -> None:
 
@@ -376,6 +394,8 @@ class GeminiAdapter:
 
 
         # 2. Check global daily and RPM quota limits
+
+        self.quota_tracker.wait_for_slot(float(os.getenv("GEMINI_MAX_WAIT_S", "65")))
 
         allowed, reason = self.quota_tracker.can_call()
 

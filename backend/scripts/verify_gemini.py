@@ -38,7 +38,7 @@ def main() -> int:
         print("    To configure your key:")
         print("    1. Copy .env.example to .env (or backend/.env)")
         print("    2. Add: GEMINI_API_KEY=your_actual_api_key_here")
-        print("    3. (Optional) Add: GEMINI_MODEL=gemini-2.5-flash")
+        print("    3. (Optional) Add: GEMINI_MODEL=gemini-3.5-flash-lite")
         print("    4. Re-run this verification script.")
         print("=" * 65)
         return 1

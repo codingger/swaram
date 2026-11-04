@@ -55,7 +55,7 @@ def test_gemini_adapter_model_configuration(monkeypatch):
     # 1. Default model
     monkeypatch.delenv("GEMINI_MODEL", raising=False)
     adapter1 = GeminiAdapter()
-    assert adapter1.model == "gemini-2.5-flash"
+    assert adapter1.model == "gemini-3.5-flash-lite"
 
     # 2. Configured via environment
     monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
@@ -103,7 +103,7 @@ def test_gemini_generate_response_interface_mocked():
     mock_resp.text = "DECISION: tool/sql_query on data/customer_pii"
     mock_client.models.generate_content.return_value = mock_resp
 
-    adapter = GeminiAdapter(api_key="test-key-mock", client=mock_client)
+    adapter = GeminiAdapter(api_key="test-key-mock", model="gemini-2.5-flash", client=mock_client)  # 3.x keeps default temperature
 
     resp = adapter.generate_response(
         prompt="Select the next tool to run given state.",
@@ -293,3 +293,22 @@ def test_simulation_with_mocked_gemini_adapter():
     assert len(recv_events) == len(send_events)
     assert all("Gemini LLM" in e.payload["content"] for e in send_events)
     assert all("Gemini LLM" in e.payload["content"] for e in recv_events)
+
+
+def test_quota_tracker_paces_instead_of_falling_back(monkeypatch):
+    """Hitting the per-minute limit waits for the next free slot, so a run stays on Gemini end to end."""
+    from app.adapters.gemini_adapter import GeminiQuotaTracker
+
+    tracker = GeminiQuotaTracker(daily_budget=10, rpm_limit=2)
+    tracker.record_call()
+    tracker.record_call()
+    wait = tracker.seconds_until_slot()
+    assert 59 < wait <= 60
+    slept = []
+    monkeypatch.setattr("app.adapters.gemini_adapter.time.sleep", slept.append)
+    tracker.wait_for_slot(max_wait=65)
+    assert slept and slept[0] >= 59
+    tracker.wait_for_slot(max_wait=5)  # too long to wait: leave it to can_call()
+    assert len(slept) == 1
+    tracker.daily_calls_used = 10
+    assert tracker.seconds_until_slot() is None  # daily budget spent: never wait
