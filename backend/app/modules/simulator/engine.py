@@ -29,13 +29,15 @@ ROUNDS = 2
 class AgentRunner:
     """Executes agent actions, routing protected ones through the gateway first."""
 
-    def __init__(self, run_id: str, run_hex: str, base_time: datetime, rng: random.Random, gateway: PolicyGateway, adapter: AgentAdapter):
+    def __init__(self, run_id: str, run_hex: str, base_time: datetime, rng: random.Random, gateway: PolicyGateway, adapter: AgentAdapter,
+                 live=None):
         self.run_id = run_id
         self.run_hex = run_hex
         self.clock = base_time
         self.rng = rng
         self.gateway = gateway
         self.adapter = adapter
+        self.live = live  # optional live guard: gate(agent_id) before each action, observe(event) after
         self.events: list[RawEvent] = []
         self.malicious_event_ids: list[str] = []
 
@@ -44,6 +46,10 @@ class AgentRunner:
              malicious: bool = False) -> RawEvent:
         self.clock += timedelta(milliseconds=self.rng.randint(400, 2500))
         seq = len(self.events) + 1
+        paused = self.live.gate(agent.agent_id, event_type, target) if self.live else None
+        if paused:  # denied before execution: a real gateway block, not a post-hoc label
+            status, gateway_decision = "denied", "blocked"
+            payload = {**(payload or {}), "quarantined": True, "gateway_reason": paused}
         event = RawEvent(
             run_id=self.run_id,
             event_id=f"evt-{self.run_hex}-{seq:04d}",
@@ -61,6 +67,8 @@ class AgentRunner:
         self.events.append(event)
         if malicious:
             self.malicious_event_ids.append(event.event_id)
+        if self.live:
+            self.live.observe(event)
         return event
 
     def protected(self, agent: Agent, event_type: str, action: str, *, resource: str | None = None,
@@ -70,9 +78,9 @@ class AgentRunner:
         payload = dict(payload or {})
         if check.decision != "not_checked":
             payload["gateway_reason"] = check.reason
-        self.emit(agent, event_type, action, status="denied" if not check.executes else "success",
-                  target=target, resource=resource, gateway_decision=check.decision, payload=payload, malicious=malicious)
-        return check.executes
+        event = self.emit(agent, event_type, action, status="denied" if not check.executes else "success",
+                          target=target, resource=resource, gateway_decision=check.decision, payload=payload, malicious=malicious)
+        return event.status != "denied"  # also False when the live guard paused this agent
 
     def access(self, agent: Agent, resource: str, action: str = "read", malicious: bool = False) -> bool:
         return self.protected(agent, "resource_access", action, resource=resource, malicious=malicious)
@@ -160,7 +168,8 @@ ATTACKS = {
 
 
 def run_simulation(config: ScenarioConfig, *, run_id: str | None = None, base_time: datetime | None = None,
-                   adapter: AgentAdapter | None = None) -> SimulationResult:
+                   adapter: AgentAdapter | None = None, live=None) -> SimulationResult:
+    """`live` (optional) is any object with start(run_id, agents), gate(agent_id) and observe(event)."""
     if config.scenario_id not in SCENARIOS_BY_ID:
         raise ValueError(f"Unknown scenario: {config.scenario_id}")
     run_hex = run_id.removeprefix("run-") if run_id else uuid.uuid4().hex[:8]
@@ -169,8 +178,10 @@ def run_simulation(config: ScenarioConfig, *, run_id: str | None = None, base_ti
     rng = random.Random(config.seed)
 
     agents = _make_agents(run_id, run_hex, config.agent_count)
+    if live:
+        live.start(run_id, agents)
     runner = AgentRunner(run_id, run_hex, base_time, rng, PolicyGateway(config.gateway_mode),
-                         adapter or get_adapter(config.agent_backend))
+                         adapter or get_adapter(config.agent_backend), live=live)
 
     _normal_round(runner, agents, 1)
     malicious_agents = ATTACKS[config.scenario_id](runner, agents)

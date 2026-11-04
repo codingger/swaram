@@ -48,6 +48,9 @@ class ScenarioConfig(BaseModel):
     drop_rate: float = Field(0.0, ge=0.0, le=0.9, description="Fraction of events to drop (missing-data tests)")
     agent_backend: str = Field("deterministic", description="Adapter that writes message text")
     auto_pipeline: bool = Field(False, description="Run collect -> detect -> respond automatically")
+    live_guard: Literal["off", "detect", "contain"] = Field(
+        "off", description="Stream every event to Threat Detection as it happens; 'contain' also pauses risky agents")
+    pause_at: float = Field(0.6, ge=0.2, le=0.99, description="Risk at which live containment pauses an agent")
     persist: bool = True
 
 
@@ -101,6 +104,7 @@ class SimulationResult(BaseModel):
     run: Run
     agents: list[Agent]
     events: list[RawEvent]
+    live_report: Optional["LiveReport"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +273,41 @@ class DetectionResult(BaseModel):
     assessments: list[AgentAssessment] = Field(default_factory=list)
 
 
+class LiveDetection(BaseModel):
+    """First moment a finding appeared while the run was still going."""
+
+    sequence: int
+    timestamp: str
+    event_id: str  # the event whose arrival produced the finding
+    rule_id: str
+    rule_name: str
+    severity: Severity
+    agent_ids: list[str]
+    reason: str
+
+
+class Containment(BaseModel):
+    agent_id: str
+    role: Optional[str] = None
+    scope: Literal["agent", "egress"] = "agent"  # agent = all actions paused; egress = only outbound transfers held
+    paused_at_sequence: int
+    paused_at: str
+    risk: float
+    explanation: Optional[str] = None
+    blocked_actions: int = 0
+
+
+class LiveReport(BaseModel):
+    run_id: str
+    mode: Literal["detect", "contain"]
+    pause_at: float
+    events_processed: int
+    detections: list[LiveDetection]
+    containment: list[Containment]
+    metrics: dict[str, Any]
+    created_at: str
+
+
 class BaselineTrainRequest(BaseModel):
     source: Literal["synthetic", "run"] = "synthetic"
     run_id: Optional[str] = Field(None, description="With source=run: a run confirmed clean to fold into the baseline")
@@ -385,3 +424,6 @@ class Dashboard(BaseModel):
     timeline: list[dict[str, Any]]
     flagged_agents: list[dict[str, Any]]
     evaluation: Optional[EvaluationResult] = None
+
+
+SimulationResult.model_rebuild()  # resolves the forward reference to LiveReport
