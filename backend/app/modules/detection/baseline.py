@@ -41,8 +41,26 @@ def agent_behaviors(events: list[NormalizedEvent]) -> dict[str, dict[str, list[s
     return out
 
 
+PROFILE_VERSION = 2  # v2 adds "pairs": which roles normally message which
+
+
 def empty_profile() -> dict:
-    return {"roles": {}, "runs_learned": 0}
+    return {"version": PROFILE_VERSION, "roles": {}, "pairs": {}, "runs_learned": 0}
+
+
+def is_current(profile: dict | None) -> bool:
+    return bool(profile and profile.get("roles") and profile.get("version", 1) >= PROFILE_VERSION)
+
+
+def pair_rate(profile: dict, sender_role: str | None, recipient_role: str | None) -> float | None:
+    """Messages per sender agent from role A to role B in the baseline. None when it can't be judged.
+
+    Real swarms have structural channels (planner <-> workers, ~2/agent/run) and incidental ones (<0.25).
+    """
+    role = profile.get("roles", {}).get(sender_role or "")
+    if not recipient_role or "pairs" not in profile or not role or not role["agents"]:
+        return None
+    return profile["pairs"].get(f"{sender_role}->{recipient_role}", 0) / role["agents"]
 
 
 def learn(profile: dict | None, events: list[NormalizedEvent], agents: list[Agent], run_id: str | None = None) -> dict:
@@ -58,6 +76,13 @@ def learn(profile: dict | None, events: list[NormalizedEvent], agents: list[Agen
         role["agents"] += 1
         for b in seen.get(a.agent_id, {}):
             role["behaviors"][b] = role["behaviors"].get(b, 0) + 1
+    roles = {a.agent_id: a.role for a in agents}
+    pairs = profile.setdefault("pairs", {})
+    for e in events:
+        if e.event_type == "message" and e.agent_id in roles and e.target in roles:
+            key = f"{roles[e.agent_id]}->{roles[e.target]}"
+            pairs[key] = pairs.get(key, 0) + 1
+    profile["version"] = PROFILE_VERSION
     profile["runs_learned"] += 1
     return profile
 
