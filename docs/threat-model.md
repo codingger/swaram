@@ -282,3 +282,27 @@ stays silent, and no innocent agent is paused (`tests/test_detection_replay.py`)
 weight copy fires SG-007 and pauses the agent, and its upload of the weights one event later is blocked before
 execution. Single-step attacks are detected but usually not paused: one high-severity finding gives about 23% risk,
 below the 60% pause line. That's deliberate, to keep the zero-false-pause record; `pause_at` is configurable.
+
+## 12. Per-agent baselines (SG-025)
+
+The role baseline (SG-004) knows what each **role** normally does. Baseline v4 also keeps a history per **agent
+identity** (its stable name, for example "Analyst 1": which behaviors it showed in how many runs, how many times per run,
+and whom it messaged). It's learned from the same benign runs and updated through the same continual learning.
+
+**SG-025 Drift from own history** needs 5+ runs of that agent's history and fires on:
+- a **sensitive** behavior (restricted data, outbound transfer, data hand-off, control-plane path) that this agent
+  has almost never done (≤15% of its runs, smoothed), even though it's normal for its role. Behavior that's rare for
+  the role stays with SG-004; or
+- a **volume spike**: more of something than this agent usually does (> its mean + 3σ, at least 3 occurrences).
+
+New contacts are added as context but never alert on their own, because routine teamwork reaches new peers.
+The explanation panel calls it "Behaving unlike its own history (possible takeover or compromise)". Any agent with an
+alert is now at least *watch*, so it always gets an explanation.
+
+**Honest scope:** in our simulator every agent of a role behaves the same, so per-agent history adds little there and
+SG-025 stays silent on all 240 unseen runs (attacks included). Its value is with real, specialized agents. It still
+adds one thing in the simulator, an **adaptive per-agent threshold**: an analyst that normally reads PII about 1–2× a
+run reading it 5× is flagged, below SG-016's fixed budget of 6. The benchmark case *moderate over-read (per-agent)* is
+caught 100% of the time with complete logs, by SG-025 alone, with precision still 1.0 and 0 benign alarms at every
+missing-data level. Under heavy loss it decays, because counts can't be safely extrapolated so close to the agent's
+normal range.

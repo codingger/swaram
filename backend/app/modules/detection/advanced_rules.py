@@ -429,6 +429,44 @@ def rule_steganography(rule: DetectionRule, run_id: str, events: list[Normalized
 rule_steganography.uses_context = True  # receives the learned baseline (role pairs) from run_rules
 
 
+# ------------------------------------------------------------ SG-025 drift from the agent's own history
+def rule_identity_drift(rule: DetectionRule, run_id: str, events: list[NormalizedEvent], registry: dict[str, Agent],
+                        ctx: dict | None = None) -> list[Alert]:
+    """Per-agent baseline: behavior normal for the ROLE but new or excessive for THIS agent (possible takeover)."""
+    p = rule.params
+    profile = (ctx or {}).get("profile") or baseline.empty_profile()
+    if not profile.get("identities"):
+        return []
+    restricted = set(p.get("restricted_resources", RESTRICTED_RESOURCES))
+    prefixes = p.get("sensitive_prefixes", SENSITIVE_PREFIXES)
+    behaviors = baseline.agent_behaviors(events)
+    by_id = {e.event_id: e for e in events}
+    peers: dict[str, set[str]] = defaultdict(set)
+    for e in events:
+        if e.event_type == "message" and e.target in registry and e.agent_id in registry:
+            peers[e.agent_id].add(baseline.identity_of(registry[e.target]))
+    alerts = []
+    for agent_id, agent in registry.items():
+        d = baseline.identity_drift(profile, agent, behaviors.get(agent_id, {}), peers.get(agent_id, set()),
+                                    restricted=restricted, prefixes=prefixes, min_runs=int(p.get("min_history_runs", 5)),
+                                    novel_p=float(p.get("novel_p", 0.15)), sigmas=float(p.get("spike_sigmas", 3.0)))
+        if not d or not (d["novel"] or d["spikes"]):
+            continue  # new peers alone are too common to alert on; they only add context
+        parts = [f"never did {n['behavior']} in {n['history_runs']} past runs" for n in d["novel"]]
+        parts += [f"{s['behavior']} {s['count']}x (usually {s['usual']})" for s in d["spikes"]]
+        if d["new_peers"]:
+            parts.append(f"also contacted new peers: {', '.join(d['new_peers'])}")
+        ids = {eid for item in d["novel"] + d["spikes"] for eid in item["event_ids"]}
+        evs = sorted((by_id[eid] for eid in ids if eid in by_id), key=lambda e: (e.timestamp, e.sequence))
+        reason = (f"{agent_id} ({d['identity']}) is behaving unlike its own history: {'; '.join(parts)}. Normal for its "
+                  f"role, unusual for this agent: a sign of takeover or compromise.")
+        alerts.append(_make(rule, run_id, [agent_id], evs, None, reason, "high" if len(d["novel"]) + len(d["spikes"]) >= 2 else None))
+    return alerts
+
+
+rule_identity_drift.uses_context = True
+
+
 ADVANCED_RULES: list[DetectionRule] = [
     DetectionRule(
         rule_id="SG-011", name="Power seeking", severity="high", recommended_action="block",
@@ -494,7 +532,15 @@ ADVANCED_RULES: list[DetectionRule] = [
                 "sensitive_prefixes": SENSITIVE_PREFIXES}),
 ]
 
+ADVANCED_RULES.append(DetectionRule(
+    rule_id="SG-025", name="Drift from own history", severity="medium", recommended_action="alert",
+    description="Per-agent baseline: a sensitive behavior this agent has never done, or far more of something than it "
+    "usually does, even though it's normal for its role. Needs 5+ runs of the agent's own history.",
+    params={"min_history_runs": 5, "novel_p": 0.15, "spike_sigmas": 3.0, "restricted_resources": RESTRICTED_RESOURCES,
+            "sensitive_prefixes": SENSITIVE_PREFIXES}))
+
 ADVANCED_IMPLS = {
+    "SG-025": rule_identity_drift,
     "SG-011": rule_power_seeking,
     "SG-012": rule_goal_hijack,
     "SG-013": rule_cascading_failure,
