@@ -14,14 +14,14 @@ from typing import Any
 from app.modules.collector.normalizer import collect
 from app.modules.detection import baseline
 from app.modules.detection.graph import build_graph
-from app.modules.detection.risk import assess
+from app.modules.detection.risk import assess, audit_queue
 from app.modules.detection.rules import DEFAULT_RULES, run_rules
 from app.modules.evaluation.metrics import aggregate, evaluate
 from app.modules.response.policy import DEFAULT_POLICY, alert_status_after, respond
 from app.modules.simulator.engine import run_simulation
 from app.modules.simulator.world import SCENARIOS
 from app.schemas import (
-    AGENT_COUNTS, Agent, AgentAssessment, Alert, BaselineTrainRequest, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
+    AGENT_COUNTS, Agent, AgentAssessment, Alert, AuditItem, BaselineTrainRequest, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
     RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult, SuiteRequest,
     SuiteResult,
 )
@@ -136,6 +136,11 @@ class Pipeline:
     def assessments(self, run_id: str) -> list[AgentAssessment]:
         self.get_run(run_id)
         return assess(run_id, self.normalized_events(run_id), self.agents(run_id), self.alerts(run_id), self.rules())
+
+    def audit_queue(self, run_id: str) -> list[AuditItem]:
+        self.get_run(run_id)
+        events, agents, alerts, rules = self.normalized_events(run_id), self.agents(run_id), self.alerts(run_id), self.rules()
+        return audit_queue(events, agents, alerts, assess(run_id, events, agents, alerts, rules), rules)
 
     def policy(self, policy_id: str = "default") -> ResponsePolicy:
         doc = self.store.get("response_policies", policy_id)

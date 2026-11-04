@@ -6,7 +6,7 @@ import { Badge, Button, Card, Empty, OutputSelect, PageHeader, RunSelect, Status
 import { shortId } from "../lib/format";
 import { useAppState, useRunData } from "../state";
 import type { AgentAssessment, Alert, AgentGraph, DetectionRule } from "../types";
-import { AssessmentDetail, BaselineCard, riskColumns } from "./DetectionInsights";
+import { AssessmentDetail, auditColumns, BaselineCard, riskColumns } from "./DetectionInsights";
 
 const columns: Column<Alert>[] = [
   { key: "severity", label: "severity", render: (a) => <Badge value={a.severity} /> },
@@ -30,6 +30,7 @@ export function DetectionPage() {
   const alerts = useRunData(api.alerts, selectedRunId);
   const graph = useRunData(api.graph, selectedRunId);
   const assessments = useRunData(api.assessments, selectedRunId);
+  const audit = useRunData(api.auditQueue, selectedRunId);
   const rules = useRunData(() => api.rules(), "rules");
 
   const shownAlerts = preview?.alerts ?? alerts.data;
@@ -46,7 +47,7 @@ export function DetectionPage() {
       const res = await api.detect(selectedRunId, persist);
       if (persist) {
         setPreview(null);
-        await Promise.all([alerts.reload(), graph.reload(), assessments.reload(), refreshRuns()]);
+        await Promise.all([alerts.reload(), graph.reload(), assessments.reload(), audit.reload(), refreshRuns()]);
       } else {
         setPreview({ alerts: res.alerts, graph: res.graph, assessments: res.assessments });
       }
@@ -139,6 +140,11 @@ export function DetectionPage() {
       <ResultViewer title={preview ? "Agent risk ranking (preview)" : "Agent risk ranking"} rows={shownRisk} columns={riskColumns}
         filename={`agent_risk_${selectedRunId}`} rowKey={(a) => a.agent_id} selectedKey={currentAgent?.agent_id ?? null}
         onRowClick={(a) => setSelectedAgent(a.agent_id)} empty="Run detection to rank agents by risk." />
+
+      <ResultViewer title="Audit queue" rows={preview ? null : audit.data} columns={auditColumns}
+        filename={`audit_queue_${selectedRunId}`} rowKey={(i) => i.event_id}
+        extraActions={<span className="hidden text-[12px] text-faint sm:inline">Not alerts: actions worth a reviewer's time</span>}
+        empty={preview ? "Save detection results to build the audit queue." : "Nothing needs review in this run."} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <AssessmentDetail a={currentAgent} />

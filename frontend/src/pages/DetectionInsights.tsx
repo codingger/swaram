@@ -4,7 +4,7 @@ import { type Column } from "../components/ResultViewer";
 import { Badge, Button, Card, Empty, type Status } from "../components/ui";
 import { pct, shortId } from "../lib/format";
 import { useRunData } from "../state";
-import type { AgentAssessment } from "../types";
+import type { AgentAssessment, AuditItem } from "../types";
 
 function RiskBar({ value }: { value: number }) {
   const color = value >= 0.9 ? "#ff3b30" : value >= 0.6 ? "#ff9500" : value >= 0.2 ? "#ffcc00" : "#34c759";
@@ -25,6 +25,14 @@ export const riskColumns: Column<AgentAssessment>[] = [
   { key: "level", label: "level", render: (a) => <Badge value={a.level} /> },
   { key: "anomaly_bits", label: "anomaly", render: (a) => (a.anomaly_bits ? `${a.anomaly_bits} bits` : "") },
   { key: "best_explanation", label: "best explanation", className: "max-w-xs whitespace-normal", render: (a) => a.best_explanation ?? "" },
+];
+
+export const auditColumns: Column<AuditItem>[] = [
+  { key: "priority", label: "priority", render: (i) => <RiskBar value={i.priority} /> },
+  { key: "timestamp", label: "time (UTC)", render: (i) => <span className="font-mono">{i.timestamp.slice(11, 19)}</span> },
+  { key: "agent_id", label: "agent", render: (i) => <span className="font-mono" title={i.agent_id}>{shortId(i.agent_id)}</span> },
+  { key: "summary", label: "action", className: "max-w-sm whitespace-normal" },
+  { key: "reasons", label: "why review", className: "max-w-xs whitespace-normal", render: (i) => i.reasons.join(" · ") },
 ];
 
 /** Why an agent got its risk: Bayesian factors, System-1 behaviors and ranked hypotheses. */

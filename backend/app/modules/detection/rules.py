@@ -273,6 +273,12 @@ from app.modules.detection.advanced_rules import ADVANCED_IMPLS, ADVANCED_RULES 
 DEFAULT_RULES.extend(ADVANCED_RULES)
 RULE_IMPLS.update(ADVANCED_IMPLS)
 
+# Phase 3: checks on the assumptions the other rules rely on (docs/threat-model.md §9).
+from app.modules.detection.assurance_rules import ASSURANCE_IMPLS, ASSURANCE_RULES  # noqa: E402
+
+DEFAULT_RULES.extend(ASSURANCE_RULES)
+RULE_IMPLS.update(ASSURANCE_IMPLS)
+
 
 def run_rules(run_id: str, events: list[NormalizedEvent], agents: list[Agent], rules: list[DetectionRule] | None = None) -> list[Alert]:
     registry = {a.agent_id: a for a in agents}

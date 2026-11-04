@@ -245,6 +245,18 @@ class AgentAssessment(BaseModel):
     best_explanation: Optional[str] = None
 
 
+class AuditItem(BaseModel):
+    """One action picked for human / trusted-model review (AI-control style audit budget). Not an alert."""
+
+    event_id: str
+    agent_id: str
+    role: Optional[str] = None
+    timestamp: str
+    summary: str
+    priority: float  # 0..1, higher = review first
+    reasons: list[str]
+
+
 class DetectRequest(BaseModel):
     run_id: str
     persist: bool = True

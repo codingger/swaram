@@ -157,11 +157,19 @@ These ideas come from cognitive science: dual-process thinking, Bayesian belief 
   - SG-017, coercion of humans.
   - SG-018, loops.
   - SG-019, untrusted tooling.
-  - SG-020, steganographic collusion indicators. This is the only rule that reads message text, and only for encoding artifacts: zero-width characters, encoded blobs, mixed-alphabet look-alikes and odd whitespace. It also flags first-contact trigger messages.
+  - SG-020, steganographic collusion indicators. This is the only rule that reads message text, and only for encoding artifacts: zero-width characters, encoded blobs, mixed-alphabet look-alikes and odd whitespace. It also flags first-contact trigger messages, repeated trigger patterns (signals hidden in action choice) and message-length outliers.
+- **Phase 3 (SG-021 to SG-024, `detection/assurance_rules.py`):** checks on the assumptions the other rules rely on.
+  - SG-021, gateway bypass and enforcement failure. Resource-side `observation` events (file-integrity or DB audit) are reconciled with the agent log.
+  - SG-022, monitoring-dependent behavior: a compliance gap when the agent believes it is unmonitored, and lower scores on evaluations than on normal work.
+  - SG-023, unreviewed merges into protected targets.
+  - SG-024, unregistered agents acting in the swarm.
+- **Audit queue:** not an alert. It's a risk-ranked sample of actions for human or trusted-model review, capped by an audit budget, in the AI-control style.
 
-The full threat catalogue covers 34 threats in 5 families, with sources, signals, detectability, coverage and build order, in [docs/threat-model.md](docs/threat-model.md).
+The full threat catalogue covers 32 threats in 5 families, with sources, signals, detectability, coverage and build order, in [docs/threat-model.md](docs/threat-model.md). Current coverage is 27 built, 4 partial and 1 out of scope.
 
-Endpoints: `GET /api/runs/{id}/assessments`, `GET|POST /api/detection/baseline`.
+Endpoints: `GET /api/runs/{id}/assessments`, `GET /api/runs/{id}/audit-queue`, `GET|POST /api/detection/baseline`.
+
+The collector currently keeps `observation` events with an `unknown_event_type` warning. Adding `observation` to its canonical types is a small follow-up for the collector owner.
 
 ## Definition of Done walkthrough
 

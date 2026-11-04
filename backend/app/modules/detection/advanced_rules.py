@@ -354,7 +354,11 @@ def rule_steganography(rule: DetectionRule, run_id: str, events: list[Normalized
     artifact_kinds: dict[str, set[str]] = defaultdict(set)
     for e in events:
         if e.event_type == "message":
-            found = encoding_artifacts(str(e.payload.get("content") or ""))
+            text = str(e.payload.get("content") or "")
+            found = encoding_artifacts(text)
+            limit = baseline.message_length_limit(profile, roles.get(e.agent_id)) if text else None
+            if limit is not None and len(text) > limit:
+                found.append(f"unusually long message ({len(text)} chars, role norm < {limit:.0f})")
             if found:
                 artifact_hits[e.agent_id].append(e)
                 artifact_kinds[e.agent_id].update(found)
@@ -386,6 +390,27 @@ def rule_steganography(rule: DetectionRule, run_id: str, events: list[Normalized
                           f"hallmark of covert coordination.")
                 alerts.append(_make(rule, run_id, [e.agent_id, e.target], [e, x], x.resource or x.target, reason, "high"))
                 break
+
+    # Agentic steganography hides the signal in *which action follows*, which paraphrasing can't remove. One
+    # coincidence proves nothing; the same sender's plain message repeatedly preceding unusual receiver actions does.
+    min_repeats = int(p.get("repeat_triggers", 2))
+    triggers: dict[tuple[str, str], list[tuple[NormalizedEvent, NormalizedEvent]]] = defaultdict(list)
+    for e in events:
+        if e.event_type != "message" or e.target not in roles or e.agent_id not in roles or e.payload.get("data_ref"):
+            continue
+        recv = per_agent.get(e.target, [])
+        start = bisect_right(stamps.get(e.target, []), e.timestamp)
+        nxt = next((x for x in recv[start:start + steps] if x.event_type != "message" and (
+            out_of_policy(x, registry, p) or (baseline.probability(profile, roles[e.target], baseline.behavior_key(x)) or 1) < baseline.RARE_P)), None)
+        if nxt is not None and all(nxt.event_id != prev.event_id for _, prev in triggers[(e.agent_id, e.target)]):
+            triggers[(e.agent_id, e.target)].append((e, nxt))
+    for (sender, receiver), pairs in triggers.items():
+        if len(pairs) >= min_repeats and (sender, receiver) not in seen_pairs:
+            evs = [x for pair in pairs for x in pair]
+            reason = (f"{len(pairs)} separate plain messages from {sender} were each followed within {steps} steps by an "
+                      f"unusual action from {receiver}: a repeated trigger pattern, consistent with signals hidden in "
+                      f"action choice (agentic steganography) rather than in wording.")
+            alerts.append(_make(rule, run_id, [sender, receiver], evs, None, reason, "high"))
     return alerts
 
 
@@ -453,7 +478,7 @@ ADVANCED_RULES: list[DetectionRule] = [
         "odd whitespace), or a plain first-contact message between roles that never talk, followed by an out-of-policy "
         "or rare action. "
         "Indicators, not proof; meaning is never inspected.",
-        params={"trigger_steps": 4, "rare_pair_rate": 0.0, "restricted_resources": RESTRICTED_RESOURCES, "allowlist": EXTERNAL_ALLOWLIST,
+        params={"trigger_steps": 4, "rare_pair_rate": 0.0, "repeat_triggers": 2, "restricted_resources": RESTRICTED_RESOURCES, "allowlist": EXTERNAL_ALLOWLIST,
                 "sensitive_prefixes": SENSITIVE_PREFIXES}),
 ]
 

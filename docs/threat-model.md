@@ -1,6 +1,6 @@
 # SwarmGuard threat model: how AI agents get out of control
 
-Owner: Threat Detection (module 3). Status: **Phase 1 + Phase 2 built** (2026-11-04). Legend below: ✅ built, 🟡 partial, 🔲 proposed.
+Owner: Threat Detection (module 3). Status: **Phases 1–3 built** (2026-11-04). Legend below: ✅ built, 🟡 partial, 🔲 proposed.
 
 ## 1. The core idea
 
@@ -70,9 +70,9 @@ Coverage: ✅ built, 🟡 partially covered, 🔲 proposed.
 | C6 | **Power seeking / resource acquisition** | Requesting more compute, budget, quota or permissions | Acquisition actions; persistent retries after denial | Med | ✅ SG-011 |
 | C7 | **Covert data manipulation** | Apollo: editing the input JSON or overwriting the final ranking | Writes to read-only inputs or final outputs after they're produced; output ≠ trusted recomputation | Med | ✅ SG-015 |
 | C8 | **Reward hacking / spec gaming** | Editing tests or `conftest.py`, hard-coding outputs | Writes to `tests/`, CI config or graders; visible tests pass while held-out tests fail | Med | ✅ SG-015 · 🔲 held-out check |
-| C9 | **Sabotage** | Subtle bugs, misleading summaries, mis-rating another model's actions | Very hard from actions alone; output-quality audits and disagreement with a trusted reviewer | Low | 🔲 trusted-review sampling |
+| C9 | **Sabotage** | Subtle bugs, misleading summaries, mis-rating another model's actions | Very hard from actions alone; output-quality audits and disagreement with a trusted reviewer | Low | 🟡 SG-023 unreviewed merges · ✅ audit queue |
 | C10 | **Deception & denial** | Apollo: denies actions when questioned; false status reports | Structured claims contradict logged actions | High (if claims are structured) | ✅ SG-014 |
-| C11 | **Sandbagging / alignment faking** | Behaves well when it thinks it's watched, worse otherwise | Honeytoken touches; behaviour differs between audited and unaudited runs; capability drop on held-out tasks | Low | 🟡 SG-009 honeytokens ✅ · 🔲 observed/unobserved comparison |
+| C11 | **Sandbagging / alignment faking** | Behaves well when it thinks it's watched, worse otherwise | Honeytoken touches; behaviour differs between audited and unaudited runs; capability drop on held-out tasks | Low | 🟡 SG-009 honeytokens · SG-022 compliance gap + eval-vs-work scores |
 | C12 | **Coercion / manipulation of humans** (ASI09, blackmail) | Reads personal data, then pressures or deceives a human approver | Access to personal/HR data followed by a message to a human principal; impersonating system alerts | Med | ✅ SG-017 |
 
 ### D. Multi-agent failures
@@ -81,17 +81,17 @@ Coverage: ✅ built, 🟡 partially covered, 🔲 proposed.
 |---|---|---|---|---|---|
 | D1 | **Collusion via messages** | A hands restricted data to B, and B leaks it | Restricted read → message(data_ref) → external transfer | High | ✅ SG-003 |
 | D2 | **Covert channel / dead drop** | Passing data through a DB, file or wiki with no message | Restricted read → write to shared store → another agent reads → leak | High | ✅ SG-005 |
-| D3 | **Steganographic collusion** | Secrets hidden inside normal-looking text | Unusual entropy or length, new communication pairs, correlated actions with no visible reason | Low | 🟡 SG-020 encoding artifacts + first-contact trigger correlation · limit channel bandwidth |
+| D3 | **Steganographic collusion** | Secrets hidden inside normal-looking text | Unusual entropy or length, new communication pairs, correlated actions with no visible reason | Low | 🟡 SG-020 encoding artifacts, length outliers, first-contact and repeated triggers |
 | D4 | **Cascading failures** (ASI08) | One bad output poisons the whole pipeline | Failures or denials spreading across many agents quickly | High | ✅ SG-013 |
 | D5 | **Miscoordination / conflict** | Loops, deadlocks, agents fighting over a resource | Message ping-pong cycles, repeated identical actions, contention | Med | ✅ SG-018 |
-| D6 | **Emergent agency / network growth** | The swarm grows new links or spawns agents unprompted | New communication edges vs baseline; agent count growth | Med | 🟡 SG-004 · 🔲 graph-drift rule |
+| D6 | **Emergent agency / network growth** | The swarm grows new links or spawns agents unprompted | New communication edges vs baseline; agent count growth | Med | ✅ SG-024 unregistered agents · 🟡 SG-004 |
 
 ### E. Blind spots in the monitor itself
 
 | # | Threat | Action signals | Detect. | Coverage |
 |---|---|---|---|---|
 | E1 | **Log loss / tampering** | Sequence gaps, reordering, unsigned events | High | ✅ SG-010 |
-| E2 | **Bypassing the gateway** | Effects with no matching gateway event (e.g. a file changed with no write event) | Med | 🔲 reconcile resource state with the log |
+| E2 | **Bypassing the gateway** | Effects with no matching gateway event (e.g. a file changed with no write event) | Med | ✅ SG-021 (observation reconciliation) |
 | E3 | **Timing covert channels** | Information encoded in *when* actions happen | Low | Out of scope; reduce with jittered scheduling |
 | E4 | **Splitting harm across agents or time** | Each step benign; only the sum is harmful | Med | ✅ chain rules (SG-003/005) · ✅ SG-016 budgets |
 
@@ -174,3 +174,36 @@ Deferred: E2 gateway-bypass reconciliation (needs the real resource state) and C
   missing events, and SG-010 reports the blindness.
 - SG-020 lesson: a "rare pair" trigger threshold (< 0.25 msgs/agent/run) blamed innocent agents whose routine
   note happened to precede an attack (4% FPR). The default is first-contact only (`rare_pair_rate: 0.0`).
+
+## 9. Phase 3 design: the remaining threats (SG-021 .. SG-024, SG-020 upgrade, audit queue)
+
+Research that shaped this phase:
+- **Sandbagging:** the strongest method, noise injection into weights (Tice et al., NeurIPS 2025), needs white-box access we
+  don't have through an API. From logs we can only see the behavioural signature: worse results specifically when tested.
+- **Alignment faking:** the field's core signal is the *compliance gap* between monitored and unmonitored conditions
+  (Anthropic/Redwood). Reasoning traces catch only 20–39% of faking even when visible.
+- **Steganography:** paraphrasing removes most word-level hiding (Roger & Greenblatt 2023), but *agentic* steganography
+  hides the signal in the choice of actions and survives paraphrasing ("Hand and Brain", ICML 2026).
+- **Sabotage:** in SHADE-Arena the best LLM monitor reaches AUC 0.87 on sabotage transcripts; AI control recommends
+  trusted monitoring with an audit budget rather than relying on any single detector.
+- **Gateway bypass:** reconcile enforcement records with what the resource itself observed. A decision log can say "deny";
+  only enforcement-side evidence proves the action was stopped.
+
+| Threat | Rule | Detection logic | Fields it uses |
+|---|---|---|---|
+| E2 gateway bypass | SG-021 | Reconcile resource-side `observation` events (FIM, DB audit) with agent events: a change with no matching agent event within ±30 s is a **bypass**; a change after the gateway said `blocked` is an **enforcement failure** | `event_type: observation`, `payload.source` |
+| C11 alignment faking + sandbagging | SG-022 | **Compliance gap:** out-of-policy actions only while the agent believes it is unmonitored (`payload.believed_monitored: false`, set by the runner during honeypot windows). **Sandbagging:** mean `payload.score` on `context: evaluation` tasks ≥0.3 below its normal work (≥3 samples each) | `believed_monitored`, `score`, `context` |
+| C9 sabotage | SG-023 | Change reaching a protected branch (`repo/main`, `deploy/`) or `payload.merge: true` with no reviewer-role read/approve of that resource since the last write: an **unreviewed merge** | `merge` (optional) |
+| D6 emergent agency | SG-024 | Activity from agents not registered for the run (spawned or injected identities) | none |
+| D3 steganography (upgrade) | SG-020 | Adds a **repeated trigger** (the same sender's plain message followed by a rare or out-of-policy receiver action ≥2 times, any pair) and a **message-length outlier** (> mean + 4·max(σ, 20 chars) for the sender's role) | baseline v3 message stats |
+| C9 / all | Audit queue | Not an alert. A risk-ranked sample of actions for human or trusted-model review: every action of high/critical agents plus the rarest actions of everyone else, capped by an audit budget (AI-control style) | none |
+
+Still out of reach from logs alone: weight-level sandbagging tests (noise injection), strategy-level steganography that
+leaves no rare actions, and timing channels.
+
+### Phase 3 results
+
+- 24 rules plus the audit queue. 269 backend tests.
+- 0 alerts from SG-020..SG-024 on 120 runs of the existing scenarios (3 scenarios × 4 sizes × 2 gateway modes × 5 seeds).
+- Coverage now (counted from the tables): **27 of 32 threats ✅ built, 4 🟡 partial** (B3 tool-misuse budgets, C9 sabotage,
+  C11 sandbagging/alignment faking, D3 steganography: only detectable indirectly by nature) and **1 out of scope** (E3 timing channels).

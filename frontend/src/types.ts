@@ -211,6 +211,16 @@ export interface AgentAssessment {
   best_explanation?: string | null;
 }
 
+export interface AuditItem {
+  event_id: string;
+  agent_id: string;
+  role?: string | null;
+  timestamp: string;
+  summary: string;
+  priority: number;
+  reasons: string[];
+}
+
 export interface BaselineSummary {
   trained: boolean;
   runs_learned: number;

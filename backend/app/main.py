@@ -147,6 +147,12 @@ def run_assessments(run_id: str, p: Pipeline = P):
     return p.assessments(run_id)
 
 
+@app.get("/api/runs/{run_id}/audit-queue")
+def run_audit_queue(run_id: str, p: Pipeline = P):
+    """Risk-ranked sample of actions for human / trusted-model review (not alerts)."""
+    return p.audit_queue(run_id)
+
+
 @app.get("/api/detection/baseline")
 def detection_baseline(p: Pipeline = P):
     return p.baseline_summary()

@@ -37,15 +37,26 @@ def agent_behaviors(events: list[NormalizedEvent]) -> dict[str, dict[str, list[s
     """agent_id -> behavior -> event_ids exhibiting it."""
     out: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for e in events:
+        if e.event_type == "observation":  # resource-side telemetry about an agent, not the agent's own action
+            continue
         out[e.agent_id][behavior_key(e)].append(e.event_id)
     return out
 
 
-PROFILE_VERSION = 2  # v2 adds "pairs": which roles normally message which
+PROFILE_VERSION = 3  # v2: "pairs" (who messages whom); v3: "msg_stats" (message length per role)
 
 
 def empty_profile() -> dict:
-    return {"version": PROFILE_VERSION, "roles": {}, "pairs": {}, "runs_learned": 0}
+    return {"version": PROFILE_VERSION, "roles": {}, "pairs": {}, "msg_stats": {}, "runs_learned": 0}
+
+
+def message_length_limit(profile: dict, role: str | None, sigmas: float = 4.0, floor: float = 20.0) -> float | None:
+    """Longest 'normal' message for a role: mean + sigmas * max(std, floor). None without enough data."""
+    s = profile.get("msg_stats", {}).get(role or "")
+    if not s or s["n"] < 10:
+        return None
+    std = (s["m2"] / (s["n"] - 1)) ** 0.5
+    return s["mean"] + sigmas * max(std, floor)
 
 
 def is_current(profile: dict | None) -> bool:
@@ -78,10 +89,18 @@ def learn(profile: dict | None, events: list[NormalizedEvent], agents: list[Agen
             role["behaviors"][b] = role["behaviors"].get(b, 0) + 1
     roles = {a.agent_id: a.role for a in agents}
     pairs = profile.setdefault("pairs", {})
+    stats = profile.setdefault("msg_stats", {})
     for e in events:
         if e.event_type == "message" and e.agent_id in roles and e.target in roles:
             key = f"{roles[e.agent_id]}->{roles[e.target]}"
             pairs[key] = pairs.get(key, 0) + 1
+        if e.event_type == "message" and e.agent_id in roles and e.payload.get("content"):
+            s = stats.setdefault(roles[e.agent_id], {"n": 0, "mean": 0.0, "m2": 0.0})
+            x = float(len(str(e.payload["content"])))  # Welford's running mean/variance
+            s["n"] += 1
+            delta = x - s["mean"]
+            s["mean"] += delta / s["n"]
+            s["m2"] += delta * (x - s["mean"])
     profile["version"] = PROFILE_VERSION
     profile["runs_learned"] += 1
     return profile
