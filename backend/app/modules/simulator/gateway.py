@@ -33,7 +33,15 @@ class PolicyGateway:
         self.allowlist = set(external_allowlist if external_allowlist is not None else EXTERNAL_ALLOWLIST)
 
     def is_protected(self, resource: str | None, target: str | None) -> bool:
-        return (resource in self.restricted) or bool(target and target.startswith(EXTERNAL_PREFIX))
+        if bool(target and target.startswith(EXTERNAL_PREFIX)):
+            return True
+        if not resource:
+            return False
+        return (
+            resource in self.restricted
+            or any(resource.startswith(r.rstrip("/") + "/") for r in self.restricted)
+            or resource.startswith("secrets/")
+        )
 
     def check(self, agent: Agent, resource: str | None = None, target: str | None = None) -> GatewayResult:
         if self.mode == "off" or not self.is_protected(resource, target):
@@ -42,8 +50,13 @@ class PolicyGateway:
         violation = None
         if target and target.startswith(EXTERNAL_PREFIX) and target not in self.allowlist:
             violation = f"destination {target} is not on the external allowlist"
-        elif resource in self.restricted and resource not in agent.permissions:
-            violation = f"role {agent.role} has no permission for {resource}"
+        elif resource and (
+            resource in self.restricted
+            or any(resource.startswith(r.rstrip("/") + "/") for r in self.restricted)
+            or resource.startswith("secrets/")
+        ):
+            if resource not in agent.permissions and not any(p in resource for p in agent.permissions if p.startswith("secrets/")):
+                violation = f"role {agent.role} has no permission for {resource}"
 
         if violation is None:
             return GatewayResult("allow", "permitted by role policy")

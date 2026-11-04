@@ -49,6 +49,8 @@ class ScenarioConfig(BaseModel):
     agent_backend: str = Field("deterministic", description="Adapter that writes message text")
     auto_pipeline: bool = Field(False, description="Run collect -> detect -> respond automatically")
     persist: bool = True
+    user_task: Optional[str] = Field(None, description="User-provided task description for autonomous collaboration")
+    workspace_dir: Optional[str] = Field(None, description="Path to persistent workspace directory on disk")
 
 
 class Agent(BaseModel):
