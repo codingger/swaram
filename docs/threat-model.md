@@ -207,3 +207,39 @@ leaves no rare actions, and timing channels.
 - 0 alerts from SG-020..SG-024 on 120 runs of the existing scenarios (3 scenarios × 4 sizes × 2 gateway modes × 5 seeds).
 - Coverage now (counted from the tables): **27 of 32 threats ✅ built, 4 🟡 partial** (B3 tool-misuse budgets, C9 sabotage,
   C11 sandbagging/alignment faking, D3 steganography: only detectable indirectly by nature) and **1 out of scope** (E3 timing channels).
+
+## 10. Accuracy
+
+The three built-in scenarios exercise only a few rules, so "100% on the labeled suite" overstated accuracy.
+`detection/benchmark.py` plants 26 labeled attacks (one per threat) and 12 benign look-alikes at a random point inside
+realistic runs (5/10/20 agents, 3 seeds), then drops 0–50% of events. It's scored at agent level. Run it with
+`python scripts/benchmark_detection.py`, or with **Quick run / Full run** on the Detection page.
+
+**Fixes driven by the measurements**
+- **Absence of evidence across a gap is not evidence.** SG-021 (bypass) and SG-023 (unreviewed merge) conclude from a
+  *missing* event. When the log has a gap where that event would be, they now raise a run-level "can't verify"
+  instead of blaming the agent (`detection/evidence.py`, `LogCoverage`).
+- **Inference under missing data.** SG-003 infers the source when an agent leaks restricted data it couldn't read, the
+  hand-off fell into a log gap, and exactly one agent read that data beforehand. SG-005 infers the pick-up when a
+  tainted store is sent out but the read is missing. Inferred chains are `high`, not `critical`.
+- **Need-to-know violation.** SG-003 flags a restricted `data_ref` handed to an agent not permitted to hold it, even
+  when no leak is logged.
+- **Coverage-aware counting.** SG-016 and SG-018 extrapolate counts using *local* log coverage, which beats the run-wide
+  average because loss is bursty. They do this only at ≥70% coverage and with enough observations, after the benchmark
+  caught false alarms at 60%.
+- **Whole-chain attribution.** SG-012 names the agent that poisoned shared memory as well as the one that acted on it.
+
+**Results** (342 trials per missing-data level, 1,368 in total; before → after)
+
+| Missing | Precision | Agent FPR | Benign false alarms | Caught (any rule) | Caught given evidence survived |
+|---|---|---|---|---|---|
+| 0% | 0.967 → **1.0** | 0.0024 → **0** | 0 → **0** | **100%** | **100%** |
+| 10% | 0.968 → **1.0** | 0.0021 → **0** | 1.9% → **0** | **91%** | **97%** |
+| 30% | 0.967 → **1.0** | 0.0016 → **0** | 0.9% → **0** | **72%** | **87%** |
+| 50% | 0.954 → **1.0** | 0.0016 → **0** | 0.9% → **0** | **51%** | **75%** |
+
+**Remaining misses are mostly unrecoverable.** Only the innocent-looking step survived (just the web read, just the
+personal-data read, just the code edit), or the single event of a one-step attack was lost. A dropped log record and a
+real gateway bypass are indistinguishable, so SG-021 under gaps stays "can't verify" by design.
+`tests/test_detection_accuracy.py` enforces floors (precision 1.0, 0 benign alarms, ≥80% caught given evidence at
+30% missing) so later changes can't silently regress accuracy.

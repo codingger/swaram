@@ -10,6 +10,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from app.modules.detection import baseline
+from app.modules.detection.evidence import LogCoverage
 from app.modules.simulator.world import EXTERNAL_ALLOWLIST, EXTERNAL_PREFIX, RESTRICTED_RESOURCES, ROLE_PERMISSIONS
 from app.schemas import Agent, Alert, DetectionRule, EvidenceRef, NormalizedEvent
 from app.timeutil import now_iso, parse_iso
@@ -146,6 +147,9 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
     restricted = set(rule.params.get("restricted_resources", []))
     allow = set(rule.params.get("allowlist", []))
     taint: dict[str, _Taint] = {}
+    reads: list[NormalizedEvent] = []  # successful restricted reads so far (for inference under missing data)
+    handoffs: list[NormalizedEvent] = []  # restricted data_ref sent to agents not permitted to hold it
+    coverage = LogCoverage(events)
     alerts = []
 
     def within(t: _Taint, e: NormalizedEvent) -> bool:
@@ -166,6 +170,8 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
                 src = _Taint(resource=ref, chain=[e.agent_id], events=[])
             if e.target not in src.chain:
                 taint[e.target] = _Taint(resource=ref, chain=src.chain + [e.target], events=src.events + [e])
+            if e.target in registry and ref not in registry[e.target].permissions:
+                handoffs.append(e)  # need-to-know violation, even if nothing leaks afterwards
         elif e.event_type == "data_transfer" and (e.target or "").startswith(EXTERNAL_PREFIX) and e.target not in allow:
             t = taint.get(e.agent_id)
             if t and len(t.chain) >= 2 and within(t, e):
@@ -173,7 +179,44 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
                 reason = (f"Restricted data {t.resource} moved along {' -> '.join(t.chain)} and was sent to {e.target} "
                           f"by {e.agent_id} (transfer status {e.status}).")
                 alerts.append(_make_alert(rule, run_id, list(t.chain), evs, t.resource, reason))
+            else:
+                inferred = _infer_source(e, reads, registry, coverage, window)
+                if inferred:
+                    reason = (f"{e.agent_id} sent restricted {e.resource} to {e.target} without permission to read it. The "
+                              f"hand-off fell into a log gap; the only agent that read it beforehand was {inferred.agent_id}. "
+                              f"Inferred chain (evidence incomplete).")
+                    alerts.append(_make_alert(rule, run_id, [inferred.agent_id, e.agent_id], [inferred, e], e.resource, reason, "high"))
+        if e.event_type == "resource_access" and e.resource in restricted and e.action in READ_ACTIONS and e.status == "success":
+            reads.append(e)
+    # Hand-offs not already explained by a full chain still break need-to-know (e.g. the leak itself was not logged).
+    in_chains = {eid for al in alerts for eid in al.event_ids}
+    for m in handoffs:
+        if m.event_id not in in_chains:
+            reason = (f"{m.agent_id} handed restricted data {m.payload.get('data_ref')} to {m.target}, which is not permitted "
+                      f"to hold it. No leak is logged (yet); this is a need-to-know violation on its own.")
+            alerts.append(_make_alert(rule, run_id, [m.agent_id], [m], m.payload.get("data_ref"), reason, "high"))
     return alerts
+
+
+def _infer_source(transfer: NormalizedEvent, reads: list[NormalizedEvent], registry: dict[str, Agent],
+                  coverage: LogCoverage, window: float) -> NormalizedEvent | None:
+    """Abduction under missing data: who most plausibly handed restricted data to an agent that couldn't read it?
+
+    Only when the leaker had no access of its own, did not read it itself, exactly one other agent read it inside the
+    window, and the log is missing events between that read and the transfer (otherwise the complete log would show it).
+    """
+    sender = transfer.agent_id
+    if sender in registry and transfer.resource in registry[sender].permissions:
+        return None
+    recent = [r for r in reads if r.resource == transfer.resource
+              and 0 <= (parse_iso(transfer.timestamp) - parse_iso(r.timestamp)).total_seconds() <= window]
+    if any(r.agent_id == sender for r in recent):
+        return None
+    sources = {r.agent_id for r in recent}
+    if len(sources) != 1:
+        return None
+    last = recent[-1]
+    return last if coverage.missing_between(last, transfer) > 0 else None
 
 
 def rule_behavioral_anomaly(rule: DetectionRule, run_id: str, events: list[NormalizedEvent], registry: dict[str, Agent]) -> list[Alert]:
@@ -211,6 +254,7 @@ def rule_indirect_channel(rule: DetectionRule, run_id: str, events: list[Normali
     agent_taint: dict[str, _Taint] = {}  # agent -> how restricted data reached it
     store_taint: dict[str, _Taint] = {}  # shared resource -> who put restricted data there
     restricted_hashes: set[str] = set()  # content fingerprints seen on restricted reads (DLP-style)
+    coverage = LogCoverage(events)
     alerts, seen = [], set()
 
     def fresh(t: _Taint, e: NormalizedEvent) -> bool:
@@ -240,6 +284,12 @@ def rule_indirect_channel(rule: DetectionRule, run_id: str, events: list[Normali
                     agent_taint[e.agent_id] = _Taint(resource=t.resource, chain=t.chain + [e.agent_id], events=t.events + [e])
         elif e.event_type == "data_transfer" and (e.target or "").startswith(EXTERNAL_PREFIX) and e.target not in allow:
             t = agent_taint.get(e.agent_id)
+            inferred = False
+            if t is None and e.resource in store_taint and e.agent_id not in store_taint[e.resource].chain:
+                # The reader's pick-up event is missing, but it is sending out the very store a tainted agent filled.
+                s = store_taint[e.resource]
+                if fresh(s, e) and coverage.missing_between(s.events[-1], e) > 0:
+                    t, inferred = _Taint(resource=s.resource, chain=s.chain + [e.agent_id], events=list(s.events)), True
             if t is None or len(t.chain) < 2 or not fresh(t, e):
                 continue
             drops = sorted({x.resource for x in t.events if x.event_type == "resource_access" and x.resource not in restricted})
@@ -248,8 +298,10 @@ def rule_indirect_channel(rule: DetectionRule, run_id: str, events: list[Normali
                 continue
             seen.add(key)
             reason = (f"Restricted data {t.resource} passed {' -> '.join(t.chain)} through shared resource(s) "
-                      f"{', '.join(drops)} with no direct message, then {e.agent_id} sent it to {e.target} (status {e.status}).")
-            alerts.append(_make_alert(rule, run_id, list(t.chain), t.events + [e], ",".join(drops), reason))
+                      f"{', '.join(drops)} with no direct message, then {e.agent_id} sent it to {e.target} (status {e.status})."
+                      + (" The pick-up read fell into a log gap; inferred from the transfer (evidence incomplete)." if inferred else ""))
+            alerts.append(_make_alert(rule, run_id, list(t.chain), t.events + [e], ",".join(drops), reason,
+                                      "high" if inferred else None))
     return alerts
 
 

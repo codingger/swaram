@@ -167,7 +167,9 @@ These ideas come from cognitive science: dual-process thinking, Bayesian belief 
 
 The full threat catalogue covers 32 threats in 5 families, with sources, signals, detectability, coverage and build order, in [docs/threat-model.md](docs/threat-model.md). Current coverage is 27 built, 4 partial and 1 out of scope.
 
-Endpoints: `GET /api/runs/{id}/assessments`, `GET /api/runs/{id}/audit-queue`, `GET|POST /api/detection/baseline`.
+- **Accuracy benchmark** (`detection/benchmark.py`, `scripts/benchmark_detection.py`, and the Detection page): 26 planted attacks plus 12 benign look-alikes inside realistic runs, with 0–50% of events missing. Precision is 1.0 with 0 benign false alarms at every level. It catches 100% / 91% / 72% / 51% of attacks at 0 / 10 / 30 / 50% missing (97% / 87% / 75% when some attack evidence survived). Rules don't blame agents for an absence that falls in a log gap (`detection/evidence.py`). Details are in [docs/threat-model.md](docs/threat-model.md) §10.
+
+Endpoints: `GET /api/runs/{id}/assessments`, `GET /api/runs/{id}/audit-queue`, `GET|POST /api/detection/baseline`, `POST /api/detection/benchmark`.
 
 The collector currently keeps `observation` events with an `unknown_event_type` warning. Adding `observation` to its canonical types is a small follow-up for the collector owner.
 

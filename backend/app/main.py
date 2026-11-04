@@ -153,6 +153,18 @@ def run_audit_queue(run_id: str, p: Pipeline = P):
     return p.audit_queue(run_id)
 
 
+@app.post("/api/detection/benchmark")
+def detection_benchmark(full: bool = False, p: Pipeline = P):
+    """Accuracy on planted attacks + benign look-alikes. Quick by default (~150 trials); full=true runs ~1,400."""
+    from app.modules.detection.benchmark import ALL_CASES, run_benchmark
+    from app.modules.detection.rules import run_rules
+
+    res = run_benchmark(p.rules(), run_rules, drop_rates=(0.0, 0.1, 0.3, 0.5) if full else (0.0, 0.3),
+                        agent_counts=(5, 10, 20) if full else (5,), seeds=range(1, 4) if full else range(1, 3))
+    res["cases_info"] = {c.name: {"threat": c.threat, "benign": c.benign} for c in ALL_CASES}
+    return res
+
+
 @app.get("/api/detection/baseline")
 def detection_baseline(p: Pipeline = P):
     return p.baseline_summary()

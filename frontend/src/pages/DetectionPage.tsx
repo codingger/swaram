@@ -6,7 +6,7 @@ import { Badge, Button, Card, Empty, OutputSelect, PageHeader, RunSelect, Status
 import { shortId } from "../lib/format";
 import { useAppState, useRunData } from "../state";
 import type { AgentAssessment, Alert, AgentGraph, DetectionRule } from "../types";
-import { AssessmentDetail, auditColumns, BaselineCard, riskColumns } from "./DetectionInsights";
+import { AssessmentDetail, auditColumns, BaselineCard, BenchmarkCard, riskColumns } from "./DetectionInsights";
 
 const columns: Column<Alert>[] = [
   { key: "severity", label: "severity", render: (a) => <Badge value={a.severity} /> },
@@ -151,6 +151,8 @@ export function DetectionPage() {
         <BaselineCard runId={selectedRunId} runHasAlerts={!!shownAlerts?.length} onStatus={setStatus}
           onChanged={() => { rules.reload(); }} />
       </div>
+
+      <BenchmarkCard />
     </div>
   );
 }

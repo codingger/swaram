@@ -84,7 +84,8 @@ def test_memory_poisoning_chain_is_critical():
         access("coder", "write", "policy/gateway_rules"),         # and acts on it
     ])
     hit = only(alerts, "SG-012")
-    assert len(hit) == 1 and hit[0].agent_ids == [agent(sim, "coder")]
+    # Both the agent that poisoned memory (needs quarantine) and the one that acted on it are named.
+    assert len(hit) == 1 and hit[0].agent_ids == [agent(sim, "researcher"), agent(sim, "coder")]
     assert hit[0].severity == "critical" and hit[0].event_ids == ids and "poisoned" in hit[0].reason
 
 

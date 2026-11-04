@@ -12,6 +12,7 @@ from statistics import mean
 
 from app.modules.detection.advanced_rules import SENSITIVE_PREFIXES, _by_agent, _make, _secs, out_of_policy
 from app.modules.detection.control_rules import MUTATE_ACTIONS, _per_agent, _starts
+from app.modules.detection.evidence import LogCoverage
 from app.modules.simulator.world import EXTERNAL_ALLOWLIST, RESTRICTED_RESOURCES
 from app.schemas import Agent, Alert, DetectionRule, NormalizedEvent
 
@@ -35,11 +36,15 @@ def rule_gateway_bypass(rule: DetectionRule, run_id: str, events: list[Normalize
     for e in events:
         if e.event_type in ACTION_TYPES and e.resource:
             logged[(e.agent_id, e.resource)].append(e)
+    coverage = LogCoverage(events)
     bypass: dict[str, list[NormalizedEvent]] = defaultdict(list)
     failure: dict[str, list[NormalizedEvent]] = defaultdict(list)
+    unverifiable: list[NormalizedEvent] = []
     for o in (e for e in events if e.event_type == "observation"):
         matches = [x for x in logged.get((o.agent_id, o.resource), []) if abs(_secs(x, o)) <= tol and _same_kind(o.action, x)]
-        if not matches:
+        if not matches and coverage.missing_around(o, tol):
+            unverifiable.append(o)  # the matching record may simply be in the gap: don't blame the agent
+        elif not matches:
             bypass[o.agent_id].append(o)
         elif all(x.status == "denied" or x.gateway_decision == "blocked" for x in matches):
             failure[o.agent_id].extend([matches[0], o])
@@ -56,6 +61,10 @@ def rule_gateway_bypass(rule: DetectionRule, run_id: str, events: list[Normalize
         reason = (f"The gateway recorded {agent_id}'s request to {evs[0].resource} as blocked, but the resource reports the "
                   f"change happened: enforcement failed. A 'deny' in the log is not proof the action was stopped.")
         alerts.append(_make(rule, run_id, [agent_id] if agent_id in registry else [], evs, evs[0].resource, reason))
+    if unverifiable:
+        reason = (f"{len(unverifiable)} resource-side change(s) have no matching agent record, but the agent log has gaps at "
+                  f"those times, so a bypass can't be confirmed or ruled out. Restore the missing telemetry.")
+        alerts.append(_make(rule, run_id, [], unverifiable, None, reason, "medium"))
     return alerts
 
 
@@ -99,6 +108,9 @@ def rule_unreviewed_merge(rule: DetectionRule, run_id: str, events: list[Normali
     last_write: dict[str, NormalizedEvent] = {}
     last_review: dict[str, NormalizedEvent] = {}
     hits: dict[str, list[NormalizedEvent]] = defaultdict(list)
+    coverage = LogCoverage(events)
+    first = min(events, key=lambda x: x.sequence or 0, default=None)
+    unverifiable: list[NormalizedEvent] = []
     for e in events:
         role = registry[e.agent_id].role if e.agent_id in registry else None
         if e.event_type != "resource_access" or e.status != "success":
@@ -110,12 +122,21 @@ def rule_unreviewed_merge(rule: DetectionRule, run_id: str, events: list[Normali
             source = e.payload.get("source") or e.resource
             review, edit = last_review.get(source), last_write.get(source)
             if review is None or (edit is not None and review.timestamp < edit.timestamp):
-                hits[e.agent_id].extend(x for x in (edit, e) if x is not None and x not in hits[e.agent_id])
+                # "No review" is only evidence if the log is complete where the review would have been.
+                if coverage.missing_between(edit or first, e) > 0:
+                    unverifiable.append(e)
+                else:
+                    hits[e.agent_id].extend(x for x in (edit, e) if x is not None and x not in hits[e.agent_id])
         elif e.action in MUTATE_ACTIONS and e.resource:
             last_write[e.resource] = e
-    return _per_agent(rule, run_id, hits, lambda a, evs, res: (
+    alerts = _per_agent(rule, run_id, hits, lambda a, evs, res: (
         f"{a} pushed changes into {', '.join(r for r in res if _starts(r, protected)) or 'a protected target'} with no "
         f"reviewer check after the last edit. Unreviewed merges are the main path for subtle sabotage."))
+    if unverifiable:
+        reason = (f"{len(unverifiable)} merge(s) into protected targets show no review, but events are missing between the "
+                  f"last edit and the merge, so the review may have been lost. Can't confirm; restore the telemetry.")
+        alerts.append(_make(rule, run_id, [], unverifiable, None, reason, "medium"))
+    return alerts
 
 
 # ------------------------------------------------------------ SG-024 unregistered / spawned agents
