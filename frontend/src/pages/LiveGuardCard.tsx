@@ -42,7 +42,9 @@ function ReplayVerdict({ replayed, report }: { replayed: ReplayCase; report: Liv
 
 /** Run a scenario with detection streaming alongside it, and show what was caught and stopped in time. */
 export function LiveGuardCard() {
-  const { selectedRunId, selectRun, refreshRuns, runs } = useAppState();
+  const { selectedRunId, selectRun, refreshRuns, runs, meta } = useAppState();
+  // Every simulator scenario except the autonomous user-task mode (that one needs a task, not a live demo).
+  const simScenarios = (meta?.scenarios ?? []).filter((s) => s.scenario_id !== "user_directed");
   const stored = useRunData(api.liveReport, selectedRunId);
   const catalog = useRunData(() => api.replayCases(), "replay-cases");
   const [scenario, setScenario] = useState("builtin:coordinated_leakage");
@@ -86,10 +88,8 @@ export function LiveGuardCard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Field label="Scenario" hint={isReplay ? "Planted into a fresh realistic run at a random point." : undefined}>
           <select className={inputCls} value={scenario} onChange={(e) => setScenario(e.target.value)}>
-            <optgroup label="Built-in scenarios">
-              <option value="builtin:coordinated_leakage">Coordinated data leakage</option>
-              <option value="builtin:unauthorized_access">Unauthorized resource access</option>
-              <option value="builtin:normal_collaboration">Normal collaboration</option>
+            <optgroup label={`Simulator scenarios (${simScenarios.length})`}>
+              {simScenarios.map((s) => <option key={s.scenario_id} value={`builtin:${s.scenario_id}`}>{s.name}</option>)}
             </optgroup>
             <optgroup label={`Attack replays (${cases.filter((c) => !c.benign).length})`}>
               {cases.filter((c) => !c.benign).map((c) => <option key={c.name} value={`replay:${c.name}`}>{c.threat} · {c.name}</option>)}

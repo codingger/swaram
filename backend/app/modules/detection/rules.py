@@ -162,7 +162,7 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
             continue
         if e.event_type == "resource_access" and e.resource in restricted and e.action in READ_ACTIONS:
             taint[e.agent_id] = _Taint(resource=e.resource, chain=[e.agent_id], events=[e])
-        elif e.event_type == "message" and e.target and e.payload.get("data_ref") in restricted:
+        elif baseline.is_send(e) and e.target and e.payload.get("data_ref") in restricted:
             ref = e.payload["data_ref"]
             src = taint.get(e.agent_id)
             if src is None or src.resource != ref or not within(src, e):

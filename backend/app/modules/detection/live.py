@@ -104,7 +104,7 @@ class LiveGuard:
     def _hold_egress(self, e: NormalizedEvent) -> None:
         """Targeted containment: an agent handed restricted data it isn't permitted to hold may keep working,
         but may not send anything outside until a human reviews it. Stops the leak itself, not just what follows."""
-        if self.mode != "contain" or e.event_type != "message" or e.status != "success":
+        if self.mode != "contain" or e.event_type != "message" or e.action == "receive" or e.status != "success":
             return
         ref, target = e.payload.get("data_ref"), e.target
         recipient = self.registry.get(target or "")

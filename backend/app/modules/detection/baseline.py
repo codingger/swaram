@@ -19,8 +19,15 @@ from app.schemas import Agent, NormalizedEvent
 RARE_P = 0.1  # behaviors seen in >= 10% of same-role agents are "normal"
 
 
+def is_send(e: NormalizedEvent) -> bool:
+    """A message the agent SENT. Inbox reads ('receive': agent = recipient, target = sender) are not hand-offs."""
+    return e.event_type == "message" and e.action != "receive"
+
+
 def behavior_key(e: NormalizedEvent) -> str:
     """Structured description of what an agent did. Free text is never used."""
+    if e.event_type == "message" and e.action == "receive":
+        return "message:receive"
     if e.event_type == "message":
         ref = e.payload.get("data_ref")
         return f"message:send{f':data_ref={ref}' if ref else ''}"
@@ -43,7 +50,9 @@ def agent_behaviors(events: list[NormalizedEvent]) -> dict[str, dict[str, list[s
     return out
 
 
-PROFILE_VERSION = 4  # v2: "pairs"; v3: "msg_stats"; v4: "identities" (per-agent history)
+# v2: "pairs"; v3: "msg_stats"; v4: "identities" (per-agent history);
+# v5: inbox reads keyed as message:receive + member 1's simulator, so baselines saved before must retrain.
+PROFILE_VERSION = 5
 
 
 def empty_profile() -> dict:
@@ -91,10 +100,10 @@ def learn(profile: dict | None, events: list[NormalizedEvent], agents: list[Agen
     pairs = profile.setdefault("pairs", {})
     stats = profile.setdefault("msg_stats", {})
     for e in events:
-        if e.event_type == "message" and e.agent_id in roles and e.target in roles:
+        if is_send(e) and e.agent_id in roles and e.target in roles:
             key = f"{roles[e.agent_id]}->{roles[e.target]}"
             pairs[key] = pairs.get(key, 0) + 1
-        if e.event_type == "message" and e.agent_id in roles and e.payload.get("content"):
+        if is_send(e) and e.agent_id in roles and e.payload.get("content"):
             s = stats.setdefault(roles[e.agent_id], {"n": 0, "mean": 0.0, "m2": 0.0})
             x = float(len(str(e.payload["content"])))  # Welford's running mean/variance
             s["n"] += 1
@@ -120,7 +129,7 @@ def _learn_identities(profile: dict, events: list[NormalizedEvent], agents: list
     names = {a.agent_id: identity_of(a) for a in agents}
     peers: dict[str, set[str]] = defaultdict(set)
     for e in events:
-        if e.event_type == "message" and e.agent_id in names and e.target in names:
+        if is_send(e) and e.agent_id in names and e.target in names:
             peers[e.agent_id].add(names[e.target])
     for a in agents:
         ident = identities.setdefault(identity_of(a), {"role": a.role, "runs": 0, "behaviors": {}, "peers": {}})
@@ -158,6 +167,8 @@ def identity_drift(profile: dict, agent: Agent, behaviors: dict[str, list[str]],
             # New for THIS agent but normal for its role (role-rare behavior is SG-004's job).
             novel.append({"behavior": b, "p_self": round(p_self, 3), "history_runs": runs, "event_ids": ids})
             continue
+        if b.startswith("message:"):
+            continue  # message volume scales with swarm size; runaway messaging is SG-018's job
         mean = h["sum"] / runs
         std = max(0.0, h["sumsq"] / runs - mean * mean) ** 0.5
         if len(ids) >= 3 and len(ids) > mean + sigmas * max(std, 1.0):
