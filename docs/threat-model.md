@@ -1,6 +1,6 @@
 # SwarmGuard threat model: how AI agents get out of control
 
-Owner: Threat Detection (module 3). Status: **reviewed; Phase 1 built** (2026-11-04). Legend below: ✅ built, 🟡 partial, 🔲 proposed.
+Owner: Threat Detection (module 3). Status: **Phase 1 + Phase 2 built** (2026-11-04). Legend below: ✅ built, 🟡 partial, 🔲 proposed.
 
 ## 1. The core idea
 
@@ -42,9 +42,9 @@ Coverage: ✅ built, 🟡 partially covered, 🔲 proposed.
 
 | # | Threat | Real-world form | Action signals | Detect. | Coverage |
 |---|---|---|---|---|---|
-| A1 | **Goal hijack / prompt injection** (ASI01) | Instructions hidden in a web page, email, file or tool output | Out-of-policy action shortly after ingesting untrusted content; a sudden behaviour shift | Med | 🔲 SG-012 |
-| A2 | **Memory & context poisoning** (ASI06) | Malicious entries written to shared memory or RAG and read later by others | Writes to shared memory from untrusted provenance, followed by deviation in a *different* agent | Med | 🔲 SG-012 (memory sources) + lineage |
-| A3 | **Supply-chain compromise** (ASI04) | A malicious tool, plugin, MCP server or model | First use of an unregistered or unpinned tool; tool hash changed | Med | 🟡 SG-004 (novel tool) · 🔲 tool allowlist |
+| A1 | **Goal hijack / prompt injection** (ASI01) | Instructions hidden in a web page, email, file or tool output | Out-of-policy action shortly after ingesting untrusted content; a sudden behaviour shift | Med | ✅ SG-012 |
+| A2 | **Memory & context poisoning** (ASI06) | Malicious entries written to shared memory or RAG and read later by others | Writes to shared memory from untrusted provenance, followed by deviation in a *different* agent | Med | ✅ SG-012 (memory provenance) |
+| A3 | **Supply-chain compromise** (ASI04) | A malicious tool, plugin, MCP server or model | First use of an unregistered or unpinned tool; tool hash changed | Med | ✅ SG-019 registry / pinned hash / source · 🟡 SG-004 |
 | A4 | **Insecure inter-agent comms / spoofing** (ASI07) | Forged messages, replay, impersonating another agent | `on_behalf_of` / sender ≠ authenticated actor; replayed message ids | High | ✅ SG-008 |
 
 ### B. Misusing power it legitimately has
@@ -56,7 +56,7 @@ Coverage: ✅ built, 🟡 partially covered, 🔲 proposed.
 | B3 | **Tool misuse / destructive actions** (ASI02) | Deleting data, cost bombs, mass emails | Delete/overwrite volume, API call rate, spend spikes | Med | 🟡 SG-004 · 🔲 rate & destructive budget |
 | B4 | **Unexpected code execution** (ASI05) | A shell command from an injected prompt | Shell/exec tool outside role; dangerous command patterns | High | ✅ SG-006/007 command patterns · 🟡 SG-004 |
 | B5 | **Privilege escalation** (ASI03) | Requesting roles, reusing cached tokens, delegation abuse | Writes to `iam/`, role assumption, permission requests | High | ✅ SG-008 |
-| B6 | **Salami / low-and-slow exfil** | Many small reads, each below a threshold | Cumulative restricted volume per agent over a long window | Med | 🔲 cumulative budget rule |
+| B6 | **Salami / low-and-slow exfil** | Many small reads, each below a threshold | Cumulative restricted volume per agent over a long window | Med | ✅ SG-016 |
 
 ### C. Working against its overseers (loss of control)
 
@@ -67,13 +67,13 @@ Coverage: ✅ built, 🟡 partially covered, 🔲 proposed.
 | C3 | **Self-exfiltration** | Apollo: copying weights to another server | Reads of `model/` paths, followed by transfer or `scp`/`rsync` | High | ✅ SG-007 |
 | C4 | **Goal-guarding / successor tampering** | Apollo: overwriting the next model's system prompt | Writes to `prompts/`, `model/successor`, deployment config | High | ✅ SG-006 (`prompts/`, `model/`, `deploy/`) |
 | C5 | **Rogue replication & persistence** (METR) | Spawning copies, cron jobs, VMs, new accounts | Spawn/schedule/deploy tools; `crontab`/`nohup`/`docker run` | High | ✅ SG-007 |
-| C6 | **Power seeking / resource acquisition** | Requesting more compute, budget, quota or permissions | Acquisition actions; persistent retries after denial | Med | 🔲 SG-011 |
-| C7 | **Covert data manipulation** | Apollo: editing the input JSON or overwriting the final ranking | Writes to read-only inputs or final outputs after they're produced; output ≠ trusted recomputation | Med | 🔲 integrity-protected paths |
-| C8 | **Reward hacking / spec gaming** | Editing tests or `conftest.py`, hard-coding outputs | Writes to `tests/`, CI config or graders; visible tests pass while held-out tests fail | Med | 🔲 integrity-protected paths + held-out check |
+| C6 | **Power seeking / resource acquisition** | Requesting more compute, budget, quota or permissions | Acquisition actions; persistent retries after denial | Med | ✅ SG-011 |
+| C7 | **Covert data manipulation** | Apollo: editing the input JSON or overwriting the final ranking | Writes to read-only inputs or final outputs after they're produced; output ≠ trusted recomputation | Med | ✅ SG-015 |
+| C8 | **Reward hacking / spec gaming** | Editing tests or `conftest.py`, hard-coding outputs | Writes to `tests/`, CI config or graders; visible tests pass while held-out tests fail | Med | ✅ SG-015 · 🔲 held-out check |
 | C9 | **Sabotage** | Subtle bugs, misleading summaries, mis-rating another model's actions | Very hard from actions alone; output-quality audits and disagreement with a trusted reviewer | Low | 🔲 trusted-review sampling |
-| C10 | **Deception & denial** | Apollo: denies actions when questioned; false status reports | Structured claims contradict logged actions | High (if claims are structured) | 🔲 SG-014 |
+| C10 | **Deception & denial** | Apollo: denies actions when questioned; false status reports | Structured claims contradict logged actions | High (if claims are structured) | ✅ SG-014 |
 | C11 | **Sandbagging / alignment faking** | Behaves well when it thinks it's watched, worse otherwise | Honeytoken touches; behaviour differs between audited and unaudited runs; capability drop on held-out tasks | Low | 🟡 SG-009 honeytokens ✅ · 🔲 observed/unobserved comparison |
-| C12 | **Coercion / manipulation of humans** (ASI09, blackmail) | Reads personal data, then pressures or deceives a human approver | Access to personal/HR data followed by a message to a human principal; impersonating system alerts | Med | 🔲 sensitive-then-human rule |
+| C12 | **Coercion / manipulation of humans** (ASI09, blackmail) | Reads personal data, then pressures or deceives a human approver | Access to personal/HR data followed by a message to a human principal; impersonating system alerts | Med | ✅ SG-017 |
 
 ### D. Multi-agent failures
 
@@ -81,9 +81,9 @@ Coverage: ✅ built, 🟡 partially covered, 🔲 proposed.
 |---|---|---|---|---|---|
 | D1 | **Collusion via messages** | A hands restricted data to B, and B leaks it | Restricted read → message(data_ref) → external transfer | High | ✅ SG-003 |
 | D2 | **Covert channel / dead drop** | Passing data through a DB, file or wiki with no message | Restricted read → write to shared store → another agent reads → leak | High | ✅ SG-005 |
-| D3 | **Steganographic collusion** | Secrets hidden inside normal-looking text | Unusual entropy or length, new communication pairs, correlated actions with no visible reason | Low | 🔲 new-edge + correlation signals; limit channel bandwidth |
-| D4 | **Cascading failures** (ASI08) | One bad output poisons the whole pipeline | Failures or denials spreading across many agents quickly | High | 🔲 SG-013 |
-| D5 | **Miscoordination / conflict** | Loops, deadlocks, agents fighting over a resource | Message ping-pong cycles, repeated identical actions, contention | Med | 🔲 loop/contention rule |
+| D3 | **Steganographic collusion** | Secrets hidden inside normal-looking text | Unusual entropy or length, new communication pairs, correlated actions with no visible reason | Low | 🟡 SG-020 encoding artifacts + first-contact trigger correlation · limit channel bandwidth |
+| D4 | **Cascading failures** (ASI08) | One bad output poisons the whole pipeline | Failures or denials spreading across many agents quickly | High | ✅ SG-013 |
+| D5 | **Miscoordination / conflict** | Loops, deadlocks, agents fighting over a resource | Message ping-pong cycles, repeated identical actions, contention | Med | ✅ SG-018 |
 | D6 | **Emergent agency / network growth** | The swarm grows new links or spawns agents unprompted | New communication edges vs baseline; agent count growth | Med | 🟡 SG-004 · 🔲 graph-drift rule |
 
 ### E. Blind spots in the monitor itself
@@ -93,7 +93,7 @@ Coverage: ✅ built, 🟡 partially covered, 🔲 proposed.
 | E1 | **Log loss / tampering** | Sequence gaps, reordering, unsigned events | High | ✅ SG-010 |
 | E2 | **Bypassing the gateway** | Effects with no matching gateway event (e.g. a file changed with no write event) | Med | 🔲 reconcile resource state with the log |
 | E3 | **Timing covert channels** | Information encoded in *when* actions happen | Low | Out of scope; reduce with jittered scheduling |
-| E4 | **Splitting harm across agents or time** | Each step benign; only the sum is harmful | Med | ✅ chain rules (SG-003/005) · 🔲 cumulative budgets |
+| E4 | **Splitting harm across agents or time** | Each step benign; only the sum is harmful | Med | ✅ chain rules (SG-003/005) · ✅ SG-016 budgets |
 
 ## 4. Detection principles (what makes catching these possible)
 
@@ -139,11 +139,38 @@ Some of these fields go beyond today's simulator. They are a request to the simu
 
 1. ✅ **Built — high detectability, high impact:** C1/C2/C4 oversight & shutdown tampering, C3/C5 self-exfiltration &
    replication, B5/A4 privilege escalation & impersonation, E1 log integrity, honeytokens (C11).
-2. **Correlation rules:** A1/A2 goal hijack after untrusted input, C6 power seeking, D4 cascades, B6 salami budgets,
+2. ✅ **Built — correlation rules:** A1/A2 goal hijack after untrusted input, C6 power seeking, D4 cascades, B6 salami budgets,
    C10 deception.
-3. **Integrity & multi-agent:** C7/C8 protected paths (data manipulation, reward hacking), C12 coercion,
+3. ✅ **Built (except D6, E2) — integrity & multi-agent:** C7/C8 protected paths (data manipulation, reward hacking), C12 coercion,
    D5 loops, D6 graph drift, E2 state reconciliation.
-4. **Research-grade:** D3 steganography signals, C9 sabotage review sampling, observed-vs-unobserved comparison.
+4. **Research-grade:** 🟡 D3 steganography signals (SG-020 built), C9 sabotage review sampling, observed-vs-unobserved comparison.
 
 Each needs a synthetic test scenario. Detection tests can inject events directly, but showing it in the UI needs
 matching simulator scenarios from the simulator owner.
+
+## 8. Phase 2 design (SG-011 .. SG-020)
+
+| Threat | Rule | Detection logic | Fields it uses |
+|---|---|---|---|
+| A1 goal hijack + A2 memory poisoning | SG-012 | **Provenance tracking.** Untrusted ingestion (`web/`, `inbox/`, `uploads/`, fetch/email/browse/search tools, or `payload.untrusted`) followed by an out-of-policy action within *N* of the agent's next steps means a hijack. A `memory/` write made inside that window is marked poisoned; a later reader that then acts out-of-policy is flagged, and the evidence carries the whole chain | `payload.untrusted` (optional) |
+| C6 power seeking | SG-011 | Acquisition on `compute/`, `billing/`, `quota/`, `accounts/` or acquisition tools; ≥5 denied attempts within 120 s | none |
+| D4 cascading failure | SG-013 | ≥30% of agents (minimum 3) failed or denied within 120 s; raised for the run, not attributed to an agent | none |
+| C10 deception | SG-014 | `payload.claims` in a report (`restricted_access`, `external_transfers`) contradicted by the agent's own earlier events | `payload.claims` |
+| C8 reward hacking + C7 data manipulation | SG-015 | Mutation of protected paths (`tests/`, `ci/`, `graders/`, `eval/`, `inputs/`, `conftest.py`, `pytest.ini`) or test-editing commands; rewriting an output after it was marked `final` | `payload.final` (optional) |
+| B6 salami exfiltration | SG-016 | Rolling per-agent budget of restricted reads (count in 30 min, plus bytes if present), even when each read is permitted | `payload.bytes` (optional) |
+| C12 coercion / trust exploitation | SG-017 | Personal-data read (`hr/`, `personal/`, `mail/private`) followed by a message to a `human:` target; or a message claiming to be `system`/`security`/`admin` | `human:` targets, `payload.sender_claim` |
+| D5 loops / runaway agents | SG-018 | The same action repeated ≥5 times in a row; ≥10 messages within one agent pair in 120 s | none |
+| A3 supply chain | SG-019 | Tool not in the registry, `tool_hash` ≠ pinned hash, or `tool_source` not trusted | `payload.tool_hash`, `payload.tool_source` (optional) |
+| D3 steganographic collusion | SG-020 | (a) **Encoding artifacts** in message text: zero-width characters, long base64/hex runs, mixed-script look-alike letters, odd whitespace patterns. This is the only rule that looks at text, and only at encoding, never at meaning. (b) **Trigger correlation:** a message between two roles that never talk in the baseline, followed within *N* steps by the receiver doing something out-of-policy or rare for its role | baseline role pairs |
+
+Deferred: E2 gateway-bypass reconciliation (needs the real resource state) and C11 observed-vs-unobserved comparison
+(needs run metadata). Both stay 🔲.
+
+### Phase 2 results
+
+- 20 rules in total. 225 backend tests, each threat tested with an attack form and a benign look-alike.
+- 0 Phase-2 alerts on 240 runs of the existing scenarios (3 scenarios × 4 swarm sizes × 2 gateway modes × 10 seeds).
+- Labeled suite (60 runs): precision 1.0 and agent FPR 0.0 at every drop rate. Recall is 1.0 → 0.93 → 0.40 at 0 / 30 / 50%
+  missing events, and SG-010 reports the blindness.
+- SG-020 lesson: a "rare pair" trigger threshold (< 0.25 msgs/agent/run) blamed innocent agents whose routine
+  note happened to precede an attack (4% FPR). The default is first-contact only (`rare_pair_rate: 0.0`).

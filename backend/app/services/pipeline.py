@@ -93,8 +93,8 @@ class Pipeline:
         docs = self.store.list("detection_rules")
         rules = [DetectionRule.model_validate(d) for d in docs] or [r.model_copy(deep=True) for r in DEFAULT_RULES]
         anomaly = next((r for r in rules if r.rule_id == "SG-004"), None)
-        if anomaly and not (anomaly.params.get("profile") or {}).get("roles"):
-            anomaly.params["profile"] = self._synthetic_profile()  # train once, lazily
+        if anomaly and not baseline.is_current(anomaly.params.get("profile")):
+            anomaly.params["profile"] = self._synthetic_profile()  # train once, lazily (or upgrade an old version)
             self.save_rule(anomaly)
         return rules
 

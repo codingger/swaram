@@ -267,13 +267,24 @@ from app.modules.detection.control_rules import CONTROL_IMPLS, CONTROL_RULES  # 
 DEFAULT_RULES.extend(CONTROL_RULES)
 RULE_IMPLS.update(CONTROL_IMPLS)
 
+# Phase 2: hijack, manipulation, multi-agent and steganography rules (docs/threat-model.md §8).
+from app.modules.detection.advanced_rules import ADVANCED_IMPLS, ADVANCED_RULES  # noqa: E402
+
+DEFAULT_RULES.extend(ADVANCED_RULES)
+RULE_IMPLS.update(ADVANCED_IMPLS)
+
 
 def run_rules(run_id: str, events: list[NormalizedEvent], agents: list[Agent], rules: list[DetectionRule] | None = None) -> list[Alert]:
     registry = {a.agent_id: a for a in agents}
     ordered = sorted(events, key=lambda e: (e.timestamp, e.sequence))
+    rules = rules or DEFAULT_RULES
+    # Rules that need the learned baseline (e.g. SG-020) read it from SG-004, the rule that owns it.
+    anomaly = next((r for r in rules if r.rule_id == "SG-004"), None)
+    ctx = {"profile": (anomaly.params.get("profile") if anomaly else None) or baseline.empty_profile()}
     alerts: list[Alert] = []
-    for rule in rules or DEFAULT_RULES:
+    for rule in rules:
         impl = RULE_IMPLS.get(rule.rule_id)
         if rule.enabled and impl:
-            alerts.extend(impl(rule, run_id, ordered, registry))
+            extra = {"ctx": ctx} if getattr(impl, "uses_context", False) else {}
+            alerts.extend(impl(rule, run_id, ordered, registry, **extra))
     return alerts

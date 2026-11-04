@@ -147,6 +147,18 @@ These ideas come from cognitive science: dual-process thinking, Bayesian belief 
   - SG-009, honeytoken tripwires.
   - SG-010, log integrity: sequence gaps or reordering. This alert is never attributed to an agent.
 
+- **Phase 2 (SG-011 to SG-020, `detection/advanced_rules.py`):**
+  - SG-011, power seeking.
+  - SG-012, goal hijack and memory poisoning. Provenance-tracked: untrusted input leads to an out-of-policy action, directly or through poisoned `memory/`.
+  - SG-013, cascading failure.
+  - SG-014, deceptive reporting: `payload.claims` compared with the agent's actual logged actions.
+  - SG-015, reward hacking and result manipulation: tests, graders, CI, `inputs/`, or rewriting finalized outputs.
+  - SG-016, salami exfiltration budget.
+  - SG-017, coercion of humans.
+  - SG-018, loops.
+  - SG-019, untrusted tooling.
+  - SG-020, steganographic collusion indicators. This is the only rule that reads message text, and only for encoding artifacts: zero-width characters, encoded blobs, mixed-alphabet look-alikes and odd whitespace. It also flags first-contact trigger messages.
+
 The full threat catalogue covers 34 threats in 5 families, with sources, signals, detectability, coverage and build order, in [docs/threat-model.md](docs/threat-model.md).
 
 Endpoints: `GET /api/runs/{id}/assessments`, `GET|POST /api/detection/baseline`.
