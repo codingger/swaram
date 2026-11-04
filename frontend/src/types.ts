@@ -211,6 +211,35 @@ export interface AgentAssessment {
   best_explanation?: string | null;
 }
 
+export interface AuditItem {
+  event_id: string;
+  agent_id: string;
+  role?: string | null;
+  timestamp: string;
+  summary: string;
+  priority: number;
+  reasons: string[];
+}
+
+export interface BenchmarkRow {
+  drop_rate: number;
+  trials: number;
+  precision: number | null;
+  recall: number | null;
+  false_positive_rate: number | null;
+  threat_detection_rate: number | null;
+  right_rule_rate: number | null;
+  evidence_survived: number | null;
+  detection_given_evidence: number | null;
+  benign_alarm_rate: number | null;
+}
+
+export interface BenchmarkResult {
+  rows: BenchmarkRow[];
+  cases: Record<string, Record<string, number | null>>;
+  cases_info: Record<string, { threat: string; benign: boolean }>;
+}
+
 export interface BaselineSummary {
   trained: boolean;
   runs_learned: number;

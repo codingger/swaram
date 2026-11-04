@@ -4,7 +4,7 @@ import { type Column } from "../components/ResultViewer";
 import { Badge, Button, Card, Empty, type Status } from "../components/ui";
 import { pct, shortId } from "../lib/format";
 import { useRunData } from "../state";
-import type { AgentAssessment } from "../types";
+import type { AgentAssessment, AuditItem, BenchmarkResult } from "../types";
 
 function RiskBar({ value }: { value: number }) {
   const color = value >= 0.9 ? "#ff3b30" : value >= 0.6 ? "#ff9500" : value >= 0.2 ? "#ffcc00" : "#34c759";
@@ -25,6 +25,14 @@ export const riskColumns: Column<AgentAssessment>[] = [
   { key: "level", label: "level", render: (a) => <Badge value={a.level} /> },
   { key: "anomaly_bits", label: "anomaly", render: (a) => (a.anomaly_bits ? `${a.anomaly_bits} bits` : "") },
   { key: "best_explanation", label: "best explanation", className: "max-w-xs whitespace-normal", render: (a) => a.best_explanation ?? "" },
+];
+
+export const auditColumns: Column<AuditItem>[] = [
+  { key: "priority", label: "priority", render: (i) => <RiskBar value={i.priority} /> },
+  { key: "timestamp", label: "time (UTC)", render: (i) => <span className="font-mono">{i.timestamp.slice(11, 19)}</span> },
+  { key: "agent_id", label: "agent", render: (i) => <span className="font-mono" title={i.agent_id}>{shortId(i.agent_id)}</span> },
+  { key: "summary", label: "action", className: "max-w-sm whitespace-normal" },
+  { key: "reasons", label: "why review", className: "max-w-xs whitespace-normal", render: (i) => i.reasons.join(" · ") },
 ];
 
 /** Why an agent got its risk: Bayesian factors, System-1 behaviors and ranked hypotheses. */
@@ -82,6 +90,94 @@ export function AssessmentDetail({ a }: { a: AgentAssessment | null }) {
           </section>
         )}
       </div>
+    </Card>
+  );
+}
+
+/** Accuracy on planted attacks and benign look-alikes, across missing-event rates. */
+export function BenchmarkCard() {
+  const [res, setRes] = useState<BenchmarkResult | null>(null);
+  const [busy, setBusy] = useState<"quick" | "full" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(full: boolean) {
+    setBusy(full ? "full" : "quick");
+    setError(null);
+    try {
+      setRes(await api.benchmark(full));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const drops = res?.rows.map((r) => String(r.drop_rate)) ?? [];
+  const weakest = res
+    ? Object.entries(res.cases)
+        .filter(([name]) => !res.cases_info[name]?.benign)
+        .map(([name, by]) => ({ name, threat: res.cases_info[name]?.threat, rate: by[drops[drops.length - 1]] ?? 0 }))
+        .sort((a, b) => (a.rate ?? 0) - (b.rate ?? 0))
+        .slice(0, 5)
+    : [];
+
+  return (
+    <Card title="Accuracy benchmark" actions={
+      <>
+        <Button variant="secondary" busy={busy === "quick"} disabled={!!busy} onClick={() => run(false)} className="!px-4 !py-1.5 !text-[13px]">Quick run</Button>
+        <Button variant="ghost" busy={busy === "full"} disabled={!!busy} onClick={() => run(true)} className="!px-4 !py-1.5 !text-[13px]">Full run</Button>
+      </>
+    }>
+      <p className="mb-4 text-[13px] leading-relaxed text-muted">
+        Plants 26 labeled attacks (one per threat) and 12 benign look-alikes at random points in realistic runs, then
+        drops events to simulate incomplete logs. <strong>Caught</strong> = an attacker was flagged.
+        <strong> Caught | evidence</strong> = among trials where some attack evidence survived the drop.
+      </p>
+      {error && <p className="text-[13px] text-[#d70015]">{error}</p>}
+      {!res && !error && <Empty>Run the benchmark to measure detection accuracy.</Empty>}
+      {res && (
+        <div className="space-y-5">
+          <div className="-mx-6 overflow-x-auto">
+            <table className="w-full min-w-max text-left text-[13px]">
+              <thead>
+                <tr className="text-[12px] text-faint">
+                  {["missing events", "trials", "precision", "false-positive rate", "caught", "caught | evidence", "benign alarms"].map((h, i) => (
+                    <th key={h} className={`border-b border-black/[0.08] py-2 pr-4 font-medium ${i === 0 ? "pl-6" : ""}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {res.rows.map((r) => (
+                  <tr key={r.drop_rate} className="border-b border-black/[0.05] last:border-0">
+                    <td className="py-2 pl-6 pr-4">{pct(r.drop_rate)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{r.trials}</td>
+                    <td className="py-2 pr-4 font-medium tabular-nums">{pct(r.precision)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{pct(r.false_positive_rate)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{pct(r.threat_detection_rate)}</td>
+                    <td className="py-2 pr-4 font-medium tabular-nums">{pct(r.detection_given_evidence)}</td>
+                    <td className="py-2 pr-4 tabular-nums">{pct(r.benign_alarm_rate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h3 className="mb-2 text-[13px] font-semibold">Hardest threats at {pct(Number(drops[drops.length - 1]))} missing</h3>
+            <ul className="space-y-1.5">
+              {weakest.map((w) => (
+                <li key={w.name} className="flex items-center justify-between gap-3 text-[13px]">
+                  <span><span className="font-mono text-[12px] text-faint">{w.threat}</span> {w.name}</span>
+                  <RiskBar value={w.rate ?? 0} />
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-[12px] text-faint">
+              Misses here are mostly runs where the incriminating step itself was never logged.
+              {res.rows[0]?.trials < 200 && " Quick run uses only 2 trials per threat, so per-threat rates are noisy; use Full run for stable numbers."}
+            </p>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

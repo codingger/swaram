@@ -157,11 +157,21 @@ These ideas come from cognitive science: dual-process thinking, Bayesian belief 
   - SG-017, coercion of humans.
   - SG-018, loops.
   - SG-019, untrusted tooling.
-  - SG-020, steganographic collusion indicators. This is the only rule that reads message text, and only for encoding artifacts: zero-width characters, encoded blobs, mixed-alphabet look-alikes and odd whitespace. It also flags first-contact trigger messages.
+  - SG-020, steganographic collusion indicators. This is the only rule that reads message text, and only for encoding artifacts: zero-width characters, encoded blobs, mixed-alphabet look-alikes and odd whitespace. It also flags first-contact trigger messages, repeated trigger patterns (signals hidden in action choice) and message-length outliers.
+- **Phase 3 (SG-021 to SG-024, `detection/assurance_rules.py`):** checks on the assumptions the other rules rely on.
+  - SG-021, gateway bypass and enforcement failure. Resource-side `observation` events (file-integrity or DB audit) are reconciled with the agent log.
+  - SG-022, monitoring-dependent behavior: a compliance gap when the agent believes it is unmonitored, and lower scores on evaluations than on normal work.
+  - SG-023, unreviewed merges into protected targets.
+  - SG-024, unregistered agents acting in the swarm.
+- **Audit queue:** not an alert. It's a risk-ranked sample of actions for human or trusted-model review, capped by an audit budget, in the AI-control style.
 
-The full threat catalogue covers 34 threats in 5 families, with sources, signals, detectability, coverage and build order, in [docs/threat-model.md](docs/threat-model.md).
+The full threat catalogue covers 32 threats in 5 families, with sources, signals, detectability, coverage and build order, in [docs/threat-model.md](docs/threat-model.md). Current coverage is 27 built, 4 partial and 1 out of scope.
 
-Endpoints: `GET /api/runs/{id}/assessments`, `GET|POST /api/detection/baseline`.
+- **Accuracy benchmark** (`detection/benchmark.py`, `scripts/benchmark_detection.py`, and the Detection page): 26 planted attacks plus 12 benign look-alikes inside realistic runs, with 0–50% of events missing. Precision is 1.0 with 0 benign false alarms at every level. It catches 100% / 91% / 72% / 51% of attacks at 0 / 10 / 30 / 50% missing (97% / 87% / 75% when some attack evidence survived). Rules don't blame agents for an absence that falls in a log gap (`detection/evidence.py`). Details are in [docs/threat-model.md](docs/threat-model.md) §10.
+
+Endpoints: `GET /api/runs/{id}/assessments`, `GET /api/runs/{id}/audit-queue`, `GET|POST /api/detection/baseline`, `POST /api/detection/benchmark`.
+
+The collector currently keeps `observation` events with an `unknown_event_type` warning. Adding `observation` to its canonical types is a small follow-up for the collector owner.
 
 ## Definition of Done walkthrough
 

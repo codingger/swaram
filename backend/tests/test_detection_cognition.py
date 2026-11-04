@@ -54,7 +54,11 @@ def test_anomaly_catches_exfil_even_when_rule_evidence_is_missing(rules):
     sim = simulate("coordinated_leakage")
     events = [e for e in normalize(sim) if e.event_type != "data_transfer" or e.target == "external:approved-partner-api"]
     alerts = run_rules(sim.run.run_id, events, sim.agents, rules)
-    assert not any(a.rule_id in ("SG-002", "SG-003") for a in alerts)
+    assert not any(a.rule_id == "SG-002" for a in alerts)  # the leak itself was never logged
+    # ...but handing PII to a coder that may not hold it is still caught (need-to-know), naming the analyst only.
+    handoff = [a for a in alerts if a.rule_id == "SG-003"]
+    analyst = next(a for a in sim.agents if a.role == "analyst")
+    assert len(handoff) == 1 and handoff[0].agent_ids == [analyst.agent_id] and "need-to-know" in handoff[0].reason
     verdicts = {a.agent_id: a for a in assess(sim.run.run_id, events, sim.agents, alerts, rules)}
     coder = next(a for a in sim.agents if a.role == "coder")
     assert verdicts[coder.agent_id].level in ("watch", "high", "critical")
