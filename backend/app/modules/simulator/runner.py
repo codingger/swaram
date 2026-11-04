@@ -48,6 +48,7 @@ class AgentRunner:
         self._agent_registry: dict[str, Agent] = {}
         self.sim_agents: list[SimulatedAgent] = []
         self.sim_agents_by_id: dict[str, SimulatedAgent] = {}
+        self.ai_trace: dict | None = None  # set by autonomous.py while a model decision is being executed
 
     def register_agents(self, agents: Sequence[Agent]) -> None:
         """Register agent identities and initialize SimulatedAgent instances."""
@@ -97,6 +98,8 @@ class AgentRunner:
         if paused:  # denied before execution: a real gateway block, not a post-hoc label
             status, gateway_decision = "denied", "blocked"
             payload = {**(payload or {}), "quarantined": True, "gateway_reason": paused}
+        if self.ai_trace is not None and event_type != "observation":
+            payload = {**(payload or {}), "ai_trace": self.ai_trace}
         event = RawEvent(
             run_id=self.run_id,
             event_id=f"evt-{self.run_hex}-{seq:04d}",

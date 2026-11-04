@@ -126,8 +126,9 @@ class Pipeline:
             if not req.run_id:
                 raise ValueError("run_id is required to learn from a run")
             self.get_run(req.run_id)
-            if self.alerts(req.run_id):
-                raise ValueError("this run has alerts; only runs confirmed clean can be learned")
+            if self.alerts(req.run_id) and not req.confirm_clean:
+                raise ValueError("this run has alerts; only runs confirmed clean can be learned "
+                                 "(set confirm_clean if a reviewer found them to be false positives)")
             events = self.normalized_events(req.run_id)
             if not events:
                 raise ValueError("no normalized events for this run; run the Event Collector first")

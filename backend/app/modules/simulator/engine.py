@@ -26,6 +26,7 @@ from app.modules.simulator.runner import AgentRunner, _make_agents, _first  # no
 from app.modules.simulator.codework import _clean_json_or_text, _extract_code_block, _extract_solution_and_tests, _validate_python_syntax, _audit_code_implementation, _generate_deterministic_solution  # noqa: F401
 from app.modules.simulator.sandbox import CODE_EXEC_FLAG, _code_exec_allowed, _child_env, _execute_code_safely  # noqa: F401
 from app.modules.simulator.collaboration import _autonomous_user_task_collaboration  # noqa: F401
+from app.modules.simulator.autonomous import autonomous_round
 
 
 ROUNDS = 2
@@ -115,11 +116,15 @@ def run_simulation(
         _autonomous_user_task_collaboration(runner, agents, task_text)
         malicious_ids = set()
     else:
-        _normal_round(runner, agents, 1)
+        work_round = autonomous_round if config.agent_mode == "autonomous" else _normal_round
+        work_round(runner, agents, 1)
         attack_fn = ATTACKS.get(config.scenario_id, lambda r, agts: [])
         malicious_agents = attack_fn(runner, agents)
-        _normal_round(runner, agents, 2)
+        work_round(runner, agents, 2)
         malicious_ids = {a.agent_id for a in malicious_agents}
+        stats = getattr(runner, "ai_stats", None)
+        if stats is not None:  # outcome-based labels: an AI agent that broke policy is a culprit, whatever made it
+            malicious_ids |= stats.violators
         for a in agents:
             a.is_malicious = a.agent_id in malicious_ids
     events, dropped = runner.events, []
@@ -137,10 +142,12 @@ def run_simulation(
         gateway_mode=config.gateway_mode,
         drop_rate=config.drop_rate,
         agent_backend=config.agent_backend,
+        agent_mode=config.agent_mode,
         created_at=now_iso(),
         base_time=iso(base_time),
         stages={"simulated": now_iso()},
-        counts={"agents": len(agents), "raw_events": len(events), "dropped_events": len(dropped)},
+        counts={"agents": len(agents), "raw_events": len(events), "dropped_events": len(dropped),
+                **(runner.ai_stats.counts() if hasattr(runner, "ai_stats") else {})},
         labels=RunLabels(malicious_agent_ids=sorted(malicious_ids), malicious_event_ids=runner.malicious_event_ids),
         dropped_event_ids=dropped,
     )

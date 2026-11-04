@@ -29,7 +29,7 @@ export function SimulatorPage() {
   const { meta, selectedRunId, selectRun, refreshRuns } = useAppState();
   const [cfg, setCfg] = useState<ScenarioConfig>({
     scenario_id: "coordinated_leakage", agent_count: 5, seed: 7, gateway_mode: "monitor",
-    drop_rate: 0, agent_backend: "deterministic", auto_pipeline: false, persist: true,
+    drop_rate: 0, agent_backend: "deterministic", agent_mode: "scripted", auto_pipeline: false, persist: true,
   });
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
@@ -52,10 +52,14 @@ export function SimulatorPage() {
         setPreview(res.events);
       }
       const labels = res.run.labels.malicious_agent_ids.length;
+      const c = res.run.counts;
+      const ai = res.run.agent_mode === "autonomous"
+        ? ` AI: ${c.ai_decisions ?? 0} decisions, ${c.ai_fallbacks ?? 0} fallbacks, ${c.ai_refusals ?? 0} refusals, ${c.ai_policy_violations ?? 0} policy violations${c.injection_exposed ? `; injection followed ${c.injection_complied ?? 0}/${c.injection_exposed}` : ""}.`
+        : "";
       setStatus({
         kind: "success",
         message: <>Run <code className="font-mono">{res.run.run_id}</code> emitted {res.events.length} events from {res.agents.length} agents
-          {res.run.dropped_event_ids.length ? ` (${res.run.dropped_event_ids.length} dropped)` : ""}; {labels} labeled malicious agent(s).
+          {res.run.dropped_event_ids.length ? ` (${res.run.dropped_event_ids.length} dropped)` : ""}; {labels} labeled malicious agent(s).{ai}
           {cfg.persist ? (cfg.auto_pipeline ? " Pipeline ran automatically." : " Saved to raw_events.") : " Preview only, not saved."}</>,
       });
     } catch (e) {
@@ -68,7 +72,7 @@ export function SimulatorPage() {
   return (
     <div className="space-y-5">
       <PageHeader step={1} module="simulator" title="Agent Simulator"
-        description="Runs a deterministic multi-agent scenario and emits structured JSON events. Protected tool calls pass through a policy gateway before they execute." />
+        description="Runs a multi-agent scenario (scripted, or with each agent's AI deciding) and emits structured JSON events. Protected tool calls pass through a policy gateway before they execute." />
       <StatusBanner status={status} onClose={() => setStatus(null)} />
       {stored.error && <StatusBanner status={{ kind: "error", message: stored.error }} onClose={() => undefined} />}
 
@@ -96,7 +100,13 @@ export function SimulatorPage() {
           <Field label={`Drop rate: ${Math.round(cfg.drop_rate * 100)}%`} hint="Randomly drop events to test missing-data robustness.">
             <input type="range" min={0} max={0.9} step={0.05} value={cfg.drop_rate} onChange={(e) => set("drop_rate", Number(e.target.value))} className="w-full" />
           </Field>
-          <Field label="Agent backend" hint="Only writes message text; never used as evidence.">
+          <Field label="Agent mode" asDiv hint={cfg.agent_mode === "autonomous"
+            ? "Each worker's AI decides its own actions; anything it does outside policy is labeled. Needs an AI backend (otherwise falls back to scripted work)."
+            : "Workers follow fixed normal work; only the attack is scripted."}>
+            <Segmented full value={cfg.agent_mode ?? "scripted"} onChange={(m) => set("agent_mode", m)}
+              options={[{ value: "scripted", label: "Scripted" }, { value: "autonomous", label: "AI decides" }]} />
+          </Field>
+          <Field label="Agent backend" hint={cfg.agent_mode === "autonomous" ? "The model that makes each agent's decisions." : "Only writes message text; never used as evidence."}>
             <select className={inputCls} value={cfg.agent_backend} onChange={(e) => set("agent_backend", e.target.value)}>
               {(meta?.agent_backends ?? [{ id: "deterministic", label: "Deterministic templates", available: true }]).map((b) => (
                 <option key={b.id} value={b.id} disabled={!b.available}>{b.label}{b.available ? "" : " (no API key)"}</option>

@@ -26,6 +26,7 @@ export interface ScenarioConfig {
   gateway_mode: GatewayMode;
   drop_rate: number;
   agent_backend: string;
+  agent_mode?: "scripted" | "autonomous";
   auto_pipeline: boolean;
   live_guard?: "off" | "detect" | "contain";
   pause_at?: number;
@@ -69,6 +70,7 @@ export interface Run {
   gateway_mode: GatewayMode;
   drop_rate: number;
   agent_backend: string;
+  agent_mode?: string;
   created_at: string;
   base_time: string;
   stages: Record<string, string>;
