@@ -14,6 +14,7 @@ from typing import Any
 from app.modules.collector.normalizer import collect
 from app.modules.detection import baseline
 from app.modules.detection.graph import build_graph
+from app.modules.detection.live import LiveGuard
 from app.modules.detection.risk import assess, audit_queue
 from app.modules.detection.rules import DEFAULT_RULES, run_rules
 from app.modules.evaluation.metrics import aggregate, evaluate
@@ -21,7 +22,7 @@ from app.modules.response.policy import DEFAULT_POLICY, alert_status_after, resp
 from app.modules.simulator.engine import run_simulation
 from app.modules.simulator.world import SCENARIOS
 from app.schemas import (
-    AGENT_COUNTS, Agent, AgentAssessment, Alert, AuditItem, BaselineTrainRequest, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
+    AGENT_COUNTS, Agent, AgentAssessment, Alert, AuditItem, LiveReport, BaselineTrainRequest, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
     RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult, SuiteRequest,
     SuiteResult,
 )
@@ -137,6 +138,12 @@ class Pipeline:
         self.get_run(run_id)
         return assess(run_id, self.normalized_events(run_id), self.agents(run_id), self.alerts(run_id), self.rules())
 
+    def live_report(self, run_id: str) -> LiveReport | None:
+        """None when the run was simulated without the live guard (a normal case, not an error)."""
+        self.get_run(run_id)
+        doc = self.store.get("evaluations", f"live-{run_id}")
+        return LiveReport.model_validate(doc) if doc else None
+
     def audit_queue(self, run_id: str) -> list[AuditItem]:
         self.get_run(run_id)
         events, agents, alerts, rules = self.normalized_events(run_id), self.agents(run_id), self.alerts(run_id), self.rules()
@@ -175,12 +182,17 @@ class Pipeline:
 
     # ---------------------------------------------------------------- stages
     def simulate(self, config: ScenarioConfig) -> SimulationResult:
-        result = run_simulation(config)
+        live = LiveGuard(self.rules(), config.live_guard, config.pause_at) if config.live_guard != "off" else None
+        result = run_simulation(config, live=live)
+        if live:
+            result.live_report = live.report(result.run)
         if config.persist:
             run_id = result.run.run_id
             self.store.put_many("agents", [(a.agent_id, _dump(a)) for a in result.agents])
             self.store.put_many("raw_events", [(e.event_id, _dump(e)) for e in result.events])
             self.store.put("runs", run_id, _dump(result.run))
+            if result.live_report:
+                self.store.put("evaluations", f"live-{run_id}", {**_dump(result.live_report), "kind": "live"})
             if config.auto_pipeline:
                 self.run_all(run_id)
                 result.run = self.get_run(run_id)

@@ -243,3 +243,32 @@ personal-data read, just the code edit), or the single event of a one-step attac
 real gateway bypass are indistinguishable, so SG-021 under gaps stays "can't verify" by design.
 `tests/test_detection_accuracy.py` enforces floors (precision 1.0, 0 benign alarms, ≥80% caught given evidence at
 30% missing) so later changes can't silently regress accuracy.
+
+## 11. Live guard: detect and contain while the run happens
+
+Batch detection explains harm after it happened. The live guard (`detection/live.py`) receives every event the moment
+the agent runner emits it, re-runs all rules and agent risk, and in `contain` mode acts **before the next action
+executes**:
+- **Agent pause:** once an agent's risk reaches `pause_at` (default 60%), every later action it attempts is denied before
+  execution. It's recorded as a real gateway block (`status: denied`, `gateway_decision: blocked`, `payload.quarantined`).
+- **Egress hold (targeted):** an agent handed restricted data it may not hold keeps working, but outbound transfers are
+  held. This stops the leak itself, steps before any rule could call it a leak.
+- Denials caused by the guard are never used as evidence against the agent (SG-011 retry bursts, SG-013 cascades).
+- SG-010 (log integrity) is judged at end of run, not live.
+
+**Results** (gateway in *monitor* mode, so the effect comes from the live guard alone)
+
+| Scenario | Data left the system | Attack actions stopped | Agents contained | Innocent agents paused |
+|---|---|---|---|---|
+| Unauthorized access (5 agents) | no | 2 / 4 | 1 / 1 | 0 |
+| Coordinated leakage (5 agents) | **no** (upload held at hand-off) | 1 / 4 | 2 / 2 | 0 |
+| Coordinated leakage (10 agents, relay) | **no** | 1 / 5 | 3 / 3 | 0 |
+| Normal collaboration (5/10/20 agents) | – | – | – | **0** |
+
+Speed: about 0.1 s for 5 agents and about 2 s for 20 agents (280 events), with every rule re-run on every event.
+
+**Integration:** the agent runner (simulator module) has an optional, duck-typed hook: `start(run_id, agents)`,
+`gate(agent_id, event_type, target)` before each action and `observe(event)` after it. With `live_guard: "off"` (the
+default) runs are byte-for-byte identical to before. Use it via `POST /api/simulate` with
+`live_guard: "contain" | "detect"` and `pause_at`, read results at `GET /api/runs/{id}/live-report`, or use the
+**Live guard** card on the Detection page.

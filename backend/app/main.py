@@ -153,6 +153,12 @@ def run_audit_queue(run_id: str, p: Pipeline = P):
     return p.audit_queue(run_id)
 
 
+@app.get("/api/runs/{run_id}/live-report")
+def run_live_report(run_id: str, p: Pipeline = P):
+    """What the live guard saw and stopped while the run was happening."""
+    return p.live_report(run_id)
+
+
 @app.post("/api/detection/benchmark")
 def detection_benchmark(full: bool = False, p: Pipeline = P):
     """Accuracy on planted attacks + benign look-alikes. Quick by default (~150 trials); full=true runs ~1,400."""

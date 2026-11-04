@@ -108,6 +108,7 @@ const BADGE: Record<string, string> = {
   denied: RED, success: GREEN, failed: GRAY, pending: GRAY,
   open: ORANGE, responded: BLUE, contained: GREEN,
   simulated: BLUE, enforced: RED, error: RED, warning: ORANGE,
+  paused: "bg-[#ff3b30] text-white", held: ORANGE,
 };
 
 export function Badge({ value }: { value: string | null | undefined }) {

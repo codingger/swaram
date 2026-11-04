@@ -69,7 +69,8 @@ def rule_power_seeking(rule: DetectionRule, run_id: str, events: list[Normalized
         for e in evs:
             if (_starts(e.resource, prefixes) and e.action in ACQUIRE) or (e.event_type == "tool_call" and e.resource in tools):
                 hits[agent_id].append(e)
-        denied = [e for e in evs if e.status == "denied"]
+        # Denials caused by our own live containment are not the agent "knocking on doors".
+        denied = [e for e in evs if e.status == "denied" and not e.payload.get("quarantined")]
         for i in range(len(denied) - burst + 1):
             if _secs(denied[i], denied[i + burst - 1]) <= window:
                 hits[agent_id].extend(x for x in denied[i:i + burst] if x not in hits[agent_id])
@@ -136,7 +137,7 @@ def rule_cascading_failure(rule: DetectionRule, run_id: str, events: list[Normal
     window = float(p.get("window_seconds", 120))
     n_agents = len(registry) or len({e.agent_id for e in events})
     need = max(int(p.get("min_agents", 3)), math.ceil(float(p.get("min_agent_share", 0.3)) * n_agents))
-    bad = [e for e in events if e.status in ("failed", "denied")]
+    bad = [e for e in events if e.status in ("failed", "denied") and not e.payload.get("quarantined")]
     for i, start in enumerate(bad):
         inside = [e for e in bad[i:] if _secs(start, e) <= window]
         affected = sorted({e.agent_id for e in inside})

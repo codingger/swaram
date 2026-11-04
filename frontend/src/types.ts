@@ -27,6 +27,8 @@ export interface ScenarioConfig {
   drop_rate: number;
   agent_backend: string;
   auto_pipeline: boolean;
+  live_guard?: "off" | "detect" | "contain";
+  pause_at?: number;
   persist: boolean;
 }
 
@@ -79,6 +81,7 @@ export interface SimulationResult {
   run: Run;
   agents: Agent[];
   events: RawEvent[];
+  live_report?: LiveReport | null;
 }
 
 export interface NormalizedEvent {
@@ -219,6 +222,39 @@ export interface AuditItem {
   summary: string;
   priority: number;
   reasons: string[];
+}
+
+export interface LiveDetection {
+  sequence: number;
+  timestamp: string;
+  event_id: string;
+  rule_id: string;
+  rule_name: string;
+  severity: Severity;
+  agent_ids: string[];
+  reason: string;
+}
+
+export interface Containment {
+  agent_id: string;
+  role?: string | null;
+  scope: "agent" | "egress";
+  paused_at_sequence: number;
+  paused_at: string;
+  risk: number;
+  explanation?: string | null;
+  blocked_actions: number;
+}
+
+export interface LiveReport {
+  run_id: string;
+  mode: "detect" | "contain";
+  pause_at: number;
+  events_processed: number;
+  detections: LiveDetection[];
+  containment: Containment[];
+  metrics: Record<string, number | boolean | null>;
+  created_at: string;
 }
 
 export interface BenchmarkRow {
