@@ -331,11 +331,20 @@ Changes made while integrating this module with Threat Detection, the live guard
 **Security fixes**
 - **Path traversal:** `VirtualFilesystem.normalize_path` now drops `..`, `.`, drive letters and absolute prefixes, and
   `_sync_to_disk` refuses any path that resolves outside the workspace. Agents (possibly LLM-driven) choose these paths.
-- **Agent-written code execution is opt-in:** `_execute_code_safely` does nothing unless `SWARMGUARD_ALLOW_CODE_EXEC=1`.
-  When enabled it runs with `-E -s` and a minimal environment (no API keys inherited). It is still not a sandbox: only
-  enable it on a machine where running model-written code is acceptable.
+- **Agent-written code runs in a sandbox** (`sandbox.py`, on by default; `SWARMGUARD_CODE_EXEC=off` disables it).
+  Three layers: (1) a static check allows only harmless standard-library imports and refuses `eval`/`exec`/`open`/
+  `getattr`/`__import__` and dunder escape hatches like `__subclasses__`; (2) a CPython audit hook, installed before the
+  code runs, denies reads outside the sandbox and Python's install, all writes outside the sandbox, process creation,
+  networking, `ctypes`, the registry and environment changes; (3) an isolated subprocess (`-I -B`) in a fresh temp folder
+  with no inherited secrets and a timeout. `tests/test_sandbox.py` tries the known escapes against each layer.
+  It is defence in depth, not a VM: for untrusted production workloads, run the backend in a container as well.
 - **Workspaces live in the system temp folder** (`<tmp>/swarmguard-runs/<run_id>/workspace`), not in the repo. The web
   API rejects a client-supplied `workspace_dir`; only local scripts may choose it.
+
+**Code layout** (`engine.py` was 2,100 lines; same behaviour, now split)
+- `engine.py`: scenarios' rounds, attack scripts, `run_simulation`, JSONL export (re-exports the names below).
+- `runner.py`: `AgentRunner` (gateway + live-guard hook). `collaboration.py`: the autonomous user-task team.
+- `codework.py`: code extraction, syntax checks, review and deterministic solutions. `sandbox.py`: running code.
 
 **Contracts with downstream modules**
 - **Inbox reads (`message:receive`)** have `target` = the sender. Detection now treats only *sent* messages as hand-offs

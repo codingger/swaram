@@ -1,5 +1,4 @@
 """Integration of member 1's simulator: security fixes and contracts with Threat Detection."""
-import os
 from pathlib import Path
 
 import pytest
@@ -34,17 +33,27 @@ def test_sync_refuses_a_path_that_resolves_outside(tmp_path):
 
 
 # ------------------------------------------------------------ security: agent-written code execution
-def test_code_execution_is_off_by_default(monkeypatch):
-    monkeypatch.delenv("SWARMGUARD_ALLOW_CODE_EXEC", raising=False)
-    ok, msg = _execute_code_safely("open('pwned.txt', 'w').write('x')")
-    assert ok is False and "disabled" in msg and not Path("pwned.txt").exists()
-
-
-def test_generated_code_does_not_inherit_secrets(monkeypatch):
-    monkeypatch.setenv("SWARMGUARD_ALLOW_CODE_EXEC", "1")
-    monkeypatch.setenv("GEMINI_API_KEY", "secret-should-not-leak")
-    ok, msg = _execute_code_safely("import os, sys\nsys.exit(1 if os.getenv('GEMINI_API_KEY') else 0)")
+def test_code_runs_sandboxed_by_default(monkeypatch):
+    monkeypatch.delenv("SWARMGUARD_CODE_EXEC", raising=False)
+    ok, msg = _execute_code_safely("print(sum(range(10)))")
     assert ok, msg
+    ok, msg = _execute_code_safely("open('pwned.txt', 'w').write('x')")
+    assert ok is False and "Sandbox refused" in msg and not Path("pwned.txt").exists()
+
+
+def test_code_execution_can_be_turned_off(monkeypatch):
+    monkeypatch.setenv("SWARMGUARD_CODE_EXEC", "off")
+    ok, msg = _execute_code_safely("print('hi')")
+    assert ok is False and "turned off" in msg
+
+
+def test_generated_code_does_not_inherit_secrets(monkeypatch, tmp_path):
+    from app.modules.simulator.sandbox import _run
+
+    monkeypatch.setenv("GEMINI_API_KEY", "secret-should-not-leak")
+    # Static policy would refuse `import os`; this checks the process environment itself.
+    (tmp_path / "solution.py").write_text("import os, sys\nsys.exit(1 if os.getenv('GEMINI_API_KEY') else 0)")
+    assert _run(tmp_path, "solution", 10).returncode == 0
 
 
 def test_api_rejects_client_chosen_workspace():
@@ -78,7 +87,6 @@ def test_live_guard_contains_attack_in_new_simulator():
     res = p.simulate(ScenarioConfig(scenario_id="sg003_leak_chain", live_guard="contain", persist=False))
     assert res.live_report.metrics["data_left_the_system"] is False
     assert res.live_report.metrics["paused_innocent"] == 0
-    assert os.getenv("SWARMGUARD_ALLOW_CODE_EXEC") != "1"  # nothing here needed code execution
 
 
 # ------------------------------------------------------------ contract: canonical export keeps what detection needs
