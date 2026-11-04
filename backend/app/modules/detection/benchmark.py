@@ -17,7 +17,7 @@ from typing import Callable
 
 from app.modules.collector.normalizer import collect
 from app.modules.simulator.engine import run_simulation
-from app.schemas import Agent, Alert, DetectionRule, NormalizedEvent, ScenarioConfig
+from app.schemas import Agent, Alert, DetectionRule, NormalizedEvent, ScenarioConfig, SimulationResult
 from app.timeutil import iso, parse_iso
 
 
@@ -139,6 +139,13 @@ BENIGN: list[Case] = [
 ]
 
 ALL_CASES = ATTACKS + BENIGN
+CASES_BY_NAME = {c.name: c for c in ALL_CASES}
+
+
+def case_catalog() -> list[dict]:
+    """What the UI shows in the replay picker."""
+    return [{"name": c.name, "threat": c.threat, "benign": not c.flagged and c.benign, "expect_rules": list(c.expect_rules),
+             "roles": c.slots, "culprits": [c.slots[s] for s in c.flagged]} for c in ALL_CASES]
 
 
 @dataclass
@@ -151,11 +158,19 @@ class Trial:
     dropped: int
 
 
-def build_trial(case: Case, agent_count: int, seed: int, drop_rate: float) -> Trial:
-    """A clean simulated run with the case planted at a random point, then optionally thinned."""
-    rng = random.Random(f"{case.name}|{agent_count}|{seed}|{drop_rate}")
+@dataclass
+class Planted:
+    sim: SimulationResult
+    raw: list[dict]  # full timeline, attack included, sequences renumbered
+    slots: dict[str, str]  # slot -> agent_id
+    injected: list[str]  # event ids of the planted steps
+
+
+def plant(case: Case, agent_count: int, seed: int, *, run_id: str | None = None, salt: str = "") -> Planted:
+    """A clean simulated run with the case planted at a random point (deterministic per arguments)."""
+    rng = random.Random(f"{case.name}|{agent_count}|{seed}|{salt}")
     sim = run_simulation(ScenarioConfig(scenario_id="normal_collaboration", agent_count=agent_count, seed=seed, persist=False),
-                         run_id=f"run-bench{seed:03d}")
+                         run_id=run_id or f"run-bench{seed:03d}")
     by_role: dict[str, list[Agent]] = {}
     for a in sim.agents:
         by_role.setdefault(a.role, []).append(a)
@@ -182,8 +197,13 @@ def build_trial(case: Case, agent_count: int, seed: int, drop_rate: float) -> Tr
     hexid = sim.run.run_id.removeprefix("run-")
     for i, e in enumerate(merged, start=1):
         e["sequence"], e["event_id"] = i, f"evt-{hexid}-{i:04d}"
-    injected = [e["event_id"] for e in planted]
+    return Planted(sim, merged, slots, [e["event_id"] for e in planted])
 
+
+def build_trial(case: Case, agent_count: int, seed: int, drop_rate: float) -> Trial:
+    """A planted run, optionally thinned to simulate incomplete logs, then normalized."""
+    p = plant(case, agent_count, seed, salt=str(drop_rate))
+    sim, merged, slots, injected = p.sim, p.raw, p.slots, p.injected
     dropped = 0
     if drop_rate > 0:
         drop_rng = random.Random(f"drop|{case.name}|{seed}|{drop_rate}")
