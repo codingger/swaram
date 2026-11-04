@@ -102,7 +102,7 @@ const GREEN = "bg-[#34c759]/14 text-[#1f7a37]";
 const BLUE = "bg-[#0071e3]/10 text-[#0058b0]";
 const GRAY = "bg-black/[0.05] text-muted";
 const BADGE: Record<string, string> = {
-  critical: "bg-[#ff3b30] text-white", high: RED, medium: ORANGE, low: GRAY,
+  critical: "bg-[#ff3b30] text-white", high: RED, medium: ORANGE, low: GRAY, watch: "bg-[#ffcc00]/20 text-[#8a6500]",
   blocked: "bg-[#ff3b30] text-white", would_block: ORANGE, would_pause: "bg-[#af52de]/12 text-[#8a3cad]",
   alerted: ORANGE, allowed: GRAY,
   denied: RED, success: GREEN, failed: GRAY, pending: GRAY,

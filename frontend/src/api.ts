@@ -1,5 +1,5 @@
 import type {
-  Agent, Alert, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
+  Agent, AgentAssessment, Alert, BaselineSummary, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
   NormalizedEvent, RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult,
   SuiteRequest, SuiteResult, AgentGraph,
 } from "./types";
@@ -54,6 +54,9 @@ export const api = {
   simulate: (cfg: ScenarioConfig) => post<SimulationResult>("/simulate", cfg),
   collect: (body: { run_id?: string | null; events?: unknown[]; persist: boolean }) => post<CollectionResult>("/collect", body),
   detect: (run_id: string, persist: boolean) => post<DetectionResult>("/detect", { run_id, persist }),
+  assessments: (id: string) => request<AgentAssessment[]>(`/runs/${id}/assessments`),
+  baseline: () => request<BaselineSummary>("/detection/baseline"),
+  trainBaseline: (body: { source: "synthetic" | "run"; run_id?: string }) => post<BaselineSummary>("/detection/baseline", body),
   rules: () => request<DetectionRule[]>("/detection-rules"),
   saveRule: (rule: DetectionRule) => put<DetectionRule>(`/detection-rules/${rule.rule_id}`, rule),
   respond: (run_id: string, policy: ResponsePolicy, persist: boolean) => post<ResponseResult>("/respond", { run_id, policy, persist }),

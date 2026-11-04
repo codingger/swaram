@@ -214,6 +214,37 @@ class AgentGraph(BaseModel):
     edges: list[GraphEdge]
 
 
+class RareBehavior(BaseModel):
+    behavior: str
+    p: float  # estimated P(an agent of this role shows the behavior)
+    bits: float  # surprise, -log2(p)
+    event_ids: list[str]
+
+
+class Hypothesis(BaseModel):
+    hypothesis: str
+    label: str
+    score: float  # normalized plausibility across the candidate explanations
+    supporting: list[str]
+
+
+class AgentAssessment(BaseModel):
+    """Per-agent verdict combining System-1 anomaly and System-2 rule evidence."""
+
+    run_id: str
+    agent_id: str
+    role: Optional[str] = None
+    prior: float
+    risk: float  # Bayesian posterior P(agent is acting maliciously | evidence)
+    level: Literal["low", "watch", "high", "critical"]
+    anomaly_bits: float
+    rare_behaviors: list[RareBehavior] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)  # factors that moved the risk, with likelihood ratios
+    alert_ids: list[str] = Field(default_factory=list)
+    hypotheses: list[Hypothesis] = Field(default_factory=list)
+    best_explanation: Optional[str] = None
+
+
 class DetectRequest(BaseModel):
     run_id: str
     persist: bool = True
@@ -223,6 +254,12 @@ class DetectionResult(BaseModel):
     run_id: str
     alerts: list[Alert]
     graph: AgentGraph
+    assessments: list[AgentAssessment] = Field(default_factory=list)
+
+
+class BaselineTrainRequest(BaseModel):
+    source: Literal["synthetic", "run"] = "synthetic"
+    run_id: Optional[str] = Field(None, description="With source=run: a run confirmed clean to fold into the baseline")
 
 
 # ---------------------------------------------------------------------------

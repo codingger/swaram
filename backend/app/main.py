@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.module_info import MODULES, module_info
 from app.modules.simulator.world import SCENARIOS
 from app.schemas import (
-    AGENT_COUNTS, CollectRequest, DetectionRule, DetectRequest, EvaluateRequest, RespondRequest, ResponsePolicy,
+    AGENT_COUNTS, BaselineTrainRequest, CollectRequest, DetectionRule, DetectRequest, EvaluateRequest, RespondRequest, ResponsePolicy,
     ScenarioConfig, SuiteRequest,
 )
 from app.services.pipeline import NotFound, Pipeline
@@ -139,6 +139,23 @@ def collect(req: CollectRequest, p: Pipeline = P):
 @app.post("/api/detect")
 def detect(req: DetectRequest, p: Pipeline = P):
     return p.detect(req.run_id, req.persist)
+
+
+@app.get("/api/runs/{run_id}/assessments")
+def run_assessments(run_id: str, p: Pipeline = P):
+    """Per-agent Bayesian risk + best explanation, ranked by risk."""
+    return p.assessments(run_id)
+
+
+@app.get("/api/detection/baseline")
+def detection_baseline(p: Pipeline = P):
+    return p.baseline_summary()
+
+
+@app.post("/api/detection/baseline")
+def train_detection_baseline(req: BaselineTrainRequest, p: Pipeline = P):
+    """Retrain from synthetic normal runs, or fold in one run confirmed clean (continual learning)."""
+    return p.train_baseline(req)
 
 
 @app.get("/api/detection-rules")

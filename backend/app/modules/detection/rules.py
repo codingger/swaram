@@ -9,6 +9,7 @@ import hashlib
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from app.modules.detection import baseline
 from app.modules.simulator.world import EXTERNAL_ALLOWLIST, EXTERNAL_PREFIX, RESTRICTED_RESOURCES, ROLE_PERMISSIONS
 from app.schemas import Agent, Alert, DetectionRule, EvidenceRef, NormalizedEvent
 from app.timeutil import now_iso, parse_iso
@@ -40,6 +41,15 @@ DEFAULT_RULES: list[DetectionRule] = [
         severity="critical",
         recommended_action="pause",
         params={"window_seconds": 600, "restricted_resources": RESTRICTED_RESOURCES, "allowlist": EXTERNAL_ALLOWLIST},
+    ),
+    DetectionRule(
+        rule_id="SG-004",
+        name="Behavioral anomaly",
+        description="System-1 screen: an agent showed behaviors that agents in its role almost never show in the learned "
+        "baseline. Scored in bits of surprise; needs a trained baseline.",
+        severity="medium",
+        recommended_action="alert",
+        params={"alert_bits": 12.0, "watch_bits": 6.0, "profile": baseline.empty_profile()},
     ),
 ]
 
@@ -154,10 +164,31 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
     return alerts
 
 
+def rule_behavioral_anomaly(rule: DetectionRule, run_id: str, events: list[NormalizedEvent], registry: dict[str, Agent]) -> list[Alert]:
+    profile = rule.params.get("profile") or baseline.empty_profile()
+    if not profile.get("roles"):
+        return []  # untrained baseline: stay silent rather than guess
+    threshold = float(rule.params.get("alert_bits", 12.0))
+    by_id = {e.event_id: e for e in events}
+    alerts = []
+    for agent_id, behaviors in baseline.agent_behaviors(events).items():
+        role = registry[agent_id].role if agent_id in registry else next(
+            (e.agent_role for e in events if e.agent_id == agent_id and e.agent_role), None)
+        bits, rare = baseline.score_agent(profile, role, behaviors)
+        if bits < threshold:
+            continue
+        evs = sorted((by_id[eid] for eid in {eid for r in rare for eid in r["event_ids"]}), key=lambda e: (e.timestamp, e.sequence))
+        listed = "; ".join(f"{r['behavior']} (p={r['p']})" for r in rare)
+        reason = f"{agent_id} ({role}) showed {len(rare)} behavior(s) rare for its role, {bits} bits of surprise: {listed}."
+        alerts.append(_make_alert(rule, run_id, [agent_id], evs, None, reason))
+    return alerts
+
+
 RULE_IMPLS = {
     "SG-001": rule_unauthorized_access,
     "SG-002": rule_external_transfer,
     "SG-003": rule_coordinated_leakage,
+    "SG-004": rule_behavioral_anomaly,
 }
 
 

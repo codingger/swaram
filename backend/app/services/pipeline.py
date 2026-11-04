@@ -8,17 +8,20 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Any
 
 from app.modules.collector.normalizer import collect
+from app.modules.detection import baseline
 from app.modules.detection.graph import build_graph
+from app.modules.detection.risk import assess
 from app.modules.detection.rules import DEFAULT_RULES, run_rules
 from app.modules.evaluation.metrics import aggregate, evaluate
 from app.modules.response.policy import DEFAULT_POLICY, alert_status_after, respond
 from app.modules.simulator.engine import run_simulation
 from app.modules.simulator.world import SCENARIOS
 from app.schemas import (
-    Agent, Alert, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
+    AGENT_COUNTS, Agent, AgentAssessment, Alert, BaselineTrainRequest, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, NormalizedEvent,
     RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult, SuiteRequest,
     SuiteResult,
 )
@@ -32,6 +35,8 @@ DOWNSTREAM = {
     "responded": ("response_actions",),
 }
 STAGE_ORDER = ["simulated", "collected", "detected", "responded", "evaluated"]
+BASELINE_SEEDS = range(1, 11)
+BASELINE_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
 class NotFound(Exception):
@@ -50,8 +55,10 @@ class Pipeline:
     def seed_defaults(self) -> None:
         if not self.store.list("scenarios", limit=1):
             self.store.put_many("scenarios", [(s.scenario_id, _dump(s)) for s in SCENARIOS])
-        if not self.store.list("detection_rules", limit=1):
-            self.store.put_many("detection_rules", [(r.rule_id, _dump(r)) for r in DEFAULT_RULES])
+        existing = {d["rule_id"] for d in self.store.list("detection_rules")}
+        missing = [r for r in DEFAULT_RULES if r.rule_id not in existing]  # new rules reach old workspaces too
+        if missing:
+            self.store.put_many("detection_rules", [(r.rule_id, _dump(r)) for r in missing])
         if self.store.get("response_policies", DEFAULT_POLICY.policy_id) is None:
             self.store.put("response_policies", DEFAULT_POLICY.policy_id, _dump(DEFAULT_POLICY))
 
@@ -84,7 +91,51 @@ class Pipeline:
 
     def rules(self) -> list[DetectionRule]:
         docs = self.store.list("detection_rules")
-        return [DetectionRule.model_validate(d) for d in docs] or DEFAULT_RULES
+        rules = [DetectionRule.model_validate(d) for d in docs] or [r.model_copy(deep=True) for r in DEFAULT_RULES]
+        anomaly = next((r for r in rules if r.rule_id == "SG-004"), None)
+        if anomaly and not (anomaly.params.get("profile") or {}).get("roles"):
+            anomaly.params["profile"] = self._synthetic_profile()  # train once, lazily
+            self.save_rule(anomaly)
+        return rules
+
+    # ---------------------------------------------------------------- detection baseline
+    def _synthetic_profile(self) -> dict:
+        """Baseline from labeled-benign synthetic runs across seeds and swarm sizes."""
+        profile = baseline.empty_profile()
+        for seed in BASELINE_SEEDS:
+            for count in AGENT_COUNTS:
+                sim = run_simulation(ScenarioConfig(scenario_id="normal_collaboration", agent_count=count, seed=seed, persist=False),
+                                     run_id=f"run-base{seed:02d}{count:02d}", base_time=BASELINE_TIME)
+                events = collect([_dump(e) for e in sim.events], run_id=sim.run.run_id, agents=sim.agents).events
+                profile = baseline.learn(profile, events, sim.agents)
+        return profile
+
+    def baseline_summary(self) -> dict:
+        anomaly = next((r for r in self.rules() if r.rule_id == "SG-004"), None)
+        return baseline.summary(anomaly.params.get("profile") if anomaly else None)
+
+    def train_baseline(self, req: BaselineTrainRequest) -> dict:
+        anomaly = next((r for r in self.rules() if r.rule_id == "SG-004"), None)
+        if anomaly is None:
+            raise ValueError("SG-004 is not configured in this workspace")
+        if req.source == "synthetic":
+            anomaly.params["profile"] = self._synthetic_profile()
+        else:
+            if not req.run_id:
+                raise ValueError("run_id is required to learn from a run")
+            self.get_run(req.run_id)
+            if self.alerts(req.run_id):
+                raise ValueError("this run has alerts; only runs confirmed clean can be learned")
+            events = self.normalized_events(req.run_id)
+            if not events:
+                raise ValueError("no normalized events for this run; run the Event Collector first")
+            anomaly.params["profile"] = baseline.learn(anomaly.params.get("profile"), events, self.agents(req.run_id), req.run_id)
+        self.save_rule(anomaly)
+        return baseline.summary(anomaly.params["profile"])
+
+    def assessments(self, run_id: str) -> list[AgentAssessment]:
+        self.get_run(run_id)
+        return assess(run_id, self.normalized_events(run_id), self.agents(run_id), self.alerts(run_id), self.rules())
 
     def policy(self, policy_id: str = "default") -> ResponsePolicy:
         doc = self.store.get("response_policies", policy_id)
@@ -148,13 +199,14 @@ class Pipeline:
         if not events:
             raise ValueError("no normalized events for this run; run the Event Collector first")
         agents = self.agents(run_id)
-        alerts = run_rules(run_id, events, agents, self.rules())
+        rules = self.rules()
+        alerts = run_rules(run_id, events, agents, rules)
         graph = build_graph(run_id, events, agents, alerts)
         if persist:
             self._invalidate("detected", run_id)
             self._replace("alerts", run_id, [(a.alert_id, _dump(a)) for a in alerts])
             self._mark(run, "detected", alerts=len(alerts), responses=0)
-        return DetectionResult(run_id=run_id, alerts=alerts, graph=graph)
+        return DetectionResult(run_id=run_id, alerts=alerts, graph=graph, assessments=assess(run_id, events, agents, alerts, rules))
 
     def graph(self, run_id: str) -> DetectionResult:
         events, alerts = self.normalized_events(run_id), self.alerts(run_id)
