@@ -198,7 +198,7 @@ export function ResponsesPage() {
                     <span>Alert: {shortId(r.alert_id)}</span>
                     <span aria-hidden>&rsaquo;</span>
                   </a>
-                  <span className="text-[13px] text-[var(--text-3)]" title={r.created_at}>
+                  <span className="text-[14px] text-[var(--text-3)]" title={r.created_at}>
                     {time(r.created_at)}
                   </span>
                 </div>
@@ -210,7 +210,7 @@ export function ResponsesPage() {
               </div>
 
               {/* Metadata row */}
-              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--hairline)]/40 pt-3 font-mono text-[13px] text-[var(--text-2)]">
+              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-[var(--hairline)]/40 pt-3 font-mono text-[14px] text-[var(--text-2)]">
                 <div>
                   <span className="text-[var(--text-3)]">Target Agents: </span>
                   <span className="font-semibold text-[var(--text)]">

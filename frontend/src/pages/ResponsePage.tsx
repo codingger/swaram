@@ -142,7 +142,7 @@ export function ResponsePage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-4 text-[13px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full card px-4 text-[14px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
           >
             <Sliders size={14} className="text-[var(--text-3)]" />
             <span>Configure policy &rsaquo;</span>
@@ -157,7 +157,7 @@ export function ResponsePage() {
       <StatusBanner status={status} onClose={() => setStatus(null)} />
 
       {/* Honesty Callout Banner */}
-      <div className="rounded-2xl border border-[var(--hairline)]/80 bg-[var(--card)] p-4 text-[13px] leading-relaxed text-[var(--text-2)] shadow-[var(--shadow-1)]">
+      <div className="rounded-2xl card p-4 text-[14px] leading-relaxed text-[var(--text-2)] shadow-[var(--shadow-1)]">
         <strong className="text-[var(--text)]">Honesty guarantee: </strong>
         Decisions in simulation mode record <em>would_block</em> or <em>would_pause</em>. The word{" "}
         <strong className="text-[var(--ok)]">blocked</strong> is only recorded when the pre-execution gateway actively intercepted the tool before execution. Logging after the fact never stops an action that already executed.
@@ -220,7 +220,7 @@ export function ResponsePage() {
               </Field>
 
               <div className="space-y-2">
-                <span className="text-[13px] font-medium text-[var(--text-2)]">
+                <span className="text-[14px] font-medium text-[var(--text-2)]">
                   Severity &rarr; Decision mapping
                 </span>
                 <div className="grid grid-cols-2 gap-2">

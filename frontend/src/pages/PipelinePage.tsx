@@ -36,14 +36,14 @@ export function PipelinePage({ subpage = "simulator" }: PipelinePageProps) {
     <div className="space-y-6">
       {/* Sub-tab switcher */}
       <div className="flex border-b border-[var(--hairline)]/60 pb-3">
-        <div className="inline-flex rounded-full bg-black/[0.05] p-1 dark:bg-white/[0.08]">
+        <div className="inline-flex rounded-full bg-[var(--hairline-subtle)] p-1">
           {TABS.map((tab) => {
             const on = tab.id === activeTab;
             return (
               <button
                 key={tab.id}
                 onClick={() => onTabChange(tab.id)}
-                className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-all ${
+                className={`rounded-full px-4 py-1.5 text-[14px] font-medium transition-all ${
                   on
                     ? "bg-[var(--card)] text-[var(--text)] shadow-xs"
                     : "text-[var(--text-2)] hover:text-[var(--text)]"

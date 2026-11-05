@@ -133,7 +133,7 @@ const BADGE: Record<string, string> = {
 export function Badge({ value }: { value: string | null | undefined }) {
   if (!value) return null;
   return (
-    <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-[3px] text-[13px] font-medium leading-none ${BADGE[value] ?? GRAY}`}>
+    <span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-[3px] text-[14px] font-medium leading-none ${BADGE[value] ?? GRAY}`}>
       {value.replace(/_/g, " ")}
     </span>
   );

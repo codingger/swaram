@@ -192,7 +192,7 @@ export function SwarmPage() {
                     {/* Role badge */}
                     <div className="mt-4 flex items-center justify-between border-t border-[var(--hairline)]/40 pt-3">
                       <span className="text-[14px] text-[var(--text-2)]">Assigned role</span>
-                      <span className="rounded-md card-subtle px-2.5 py-1 text-[13px] font-semibold text-[var(--text)]">
+                      <span className="rounded-md card-subtle px-2.5 py-1 text-[14px] font-semibold text-[var(--text)]">
                         {agent.role}
                       </span>
                     </div>
@@ -239,7 +239,7 @@ export function SwarmPage() {
                       </div>
                     </div>
 
-                    <div className="mt-4 flex items-center justify-end text-[13px] font-medium text-[var(--link)] group-hover:underline">
+                    <div className="mt-4 flex items-center justify-end text-[14px] font-medium text-[var(--link)] group-hover:underline">
                       Inspect telemetry &rsaquo;
                     </div>
                   </div>
@@ -288,7 +288,7 @@ export function SwarmPage() {
               </span>
             </div>
             <div className="border-t border-[var(--hairline)]/40 pt-2">
-              <span className="text-[13px] text-[var(--text-3)]">Declared Permissions</span>
+              <span className="text-[14px] text-[var(--text-3)]">Declared Permissions</span>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {selectedAgent?.permissions?.map((p: string) => (
                   <span
@@ -299,7 +299,7 @@ export function SwarmPage() {
                   </span>
                 ))}
                 {!selectedAgent?.permissions?.length && (
-                  <span className="text-[13px] text-[var(--text-3)]">No special permissions</span>
+                  <span className="text-[14px] text-[var(--text-3)]">No special permissions</span>
                 )}
               </div>
             </div>
@@ -347,7 +347,7 @@ export function SwarmPage() {
                     {selectedAssessment.rare_behaviors.map((rb, idx) => (
                       <div
                         key={idx}
-                        className="flex items-center justify-between rounded-lg card p-2.5 text-[13px]"
+                        className="flex items-center justify-between rounded-lg card p-2.5 text-[14px]"
                       >
                         <span className="font-mono text-[var(--text)]">{rb.behavior}</span>
                         <span className="font-mono text-[12px] text-[var(--crit)]">
@@ -392,7 +392,7 @@ export function SwarmPage() {
                     {al.severity}
                   </span>
                 </div>
-                <p className="text-[13px] text-[var(--text-2)]">{al.reason}</p>
+                <p className="text-[14px] text-[var(--text-2)]">{al.reason}</p>
                 <div className="flex items-center justify-between pt-1 text-[12px]">
                   <span className="font-mono text-[var(--text-3)]">
                     {al.event_ids.length} citing event(s)
@@ -426,7 +426,7 @@ export function SwarmPage() {
                     <span className="font-mono font-medium text-[var(--text)]">{evt.event_id}</span>
                     <span className="text-[var(--text-3)]">{time(evt.timestamp)}</span>
                   </div>
-                  <div className="mt-1 text-[13px] text-[var(--text-2)]">{evt.summary}</div>
+                  <div className="mt-1 text-[14px] text-[var(--text-2)]">{evt.summary}</div>
                 </div>
               ))}
             </div>
@@ -444,7 +444,7 @@ export function SwarmPage() {
         {selectedEvent && (
           <div className="space-y-4">
             {/* Timestamp Reference Note (Item 4) */}
-            <div className="rounded-lg card-subtle p-3.5 text-[13px] leading-relaxed text-[var(--text-2)] border border-[var(--hairline-subtle)]">
+            <div className="rounded-lg card-subtle p-3.5 text-[14px] leading-relaxed text-[var(--text-2)] border border-[var(--hairline-subtle)]">
               <span className="font-semibold text-[var(--text)]">Timestamp reference:</span> Event <code className="font-mono text-[12px] text-[var(--accent)] font-semibold">timestamp</code> reflects simulator execution time; <code className="font-mono text-[12px] text-[var(--accent)] font-semibold">normalized_at</code> reflects collector ingestion wall-clock time. Raw telemetry data is unaltered.
             </div>
 
@@ -457,7 +457,7 @@ export function SwarmPage() {
                   copyToClipboard(JSON.stringify(selectedEvent, null, 2), "event-json")
                 }
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-md card px-2.5 py-1 text-[13px] font-medium text-[var(--text-2)] hover:text-[var(--text)]"
+                className="inline-flex items-center gap-1.5 rounded-md card px-2.5 py-1 text-[14px] font-medium text-[var(--text-2)] hover:text-[var(--text)]"
               >
                 {copiedId === "event-json" ? (
                   <Check size={13} className="text-[var(--ok)]" />

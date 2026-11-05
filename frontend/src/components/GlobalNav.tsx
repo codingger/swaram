@@ -28,9 +28,9 @@ export function GlobalNav({ currentRoute }: { currentRoute: string }) {
 
   return (
     <header className="sticky top-0 z-40 h-12 w-full border-b border-[var(--hairline)]/60 bg-[var(--glass)] backdrop-blur-xl">
-      <div className="mx-auto flex h-full max-w-[1280px] items-center justify-between px-6">
+      <div className="mx-auto flex h-full max-w-[1280px] items-center justify-between px-4 sm:px-6">
         {/* Left Wordmark */}
-        <a href="#/" className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-[var(--text)]">
+        <a href="#/" className="shrink-0 flex items-center gap-2 text-[15px] font-semibold tracking-tight text-[var(--text)]">
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--text)] text-[var(--bg)]">
             <svg width="13" height="15" viewBox="0 0 16 18" fill="none" aria-hidden>
               <path d="M8 1.2l6 2.3v4.8c0 4-2.6 7.2-6 8.5-3.4-1.3-6-4.5-6-8.5V3.5l6-2.3z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
@@ -41,7 +41,7 @@ export function GlobalNav({ currentRoute }: { currentRoute: string }) {
         </a>
 
         {/* Center Nav Links */}
-        <nav className="flex items-center gap-6" aria-label="Main Navigation">
+        <nav className="flex items-center gap-3 sm:gap-6 overflow-x-auto no-scrollbar" aria-label="Main Navigation">
           {NAV_ITEMS.map((item) => {
             const active = isCurrent(item.id);
             return (
@@ -65,7 +65,7 @@ export function GlobalNav({ currentRoute }: { currentRoute: string }) {
         </nav>
 
         {/* Right Controls: Run Selector & Theme Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="shrink-0 flex items-center gap-2 sm:gap-3">
           {runs.length > 0 && (
             <div className="relative">
               <select

@@ -147,7 +147,7 @@ export function DetectionPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-4 text-[13px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-4 text-[14px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
           >
             <Sliders size={14} className="text-[var(--text-3)]" />
             <span>Detection settings &rsaquo;</span>
@@ -163,10 +163,10 @@ export function DetectionPage() {
 
       {/* Clean segmented tab switcher for secondary views so rules never push findings off screen */}
       <div className="flex border-b border-[var(--hairline)]/60 pb-3">
-        <div className="inline-flex rounded-full bg-black/[0.05] p-1 dark:bg-white/[0.08]">
+        <div className="inline-flex rounded-full bg-[var(--hairline-subtle)] p-1">
           <button
             onClick={() => setActiveTab("findings")}
-            className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-all ${
+            className={`rounded-full px-4 py-1.5 text-[14px] font-medium transition-all ${
               activeTab === "findings"
                 ? "bg-[var(--card)] text-[var(--text)] shadow-xs"
                 : "text-[var(--text-2)] hover:text-[var(--text)]"
@@ -176,7 +176,7 @@ export function DetectionPage() {
           </button>
           <button
             onClick={() => setActiveTab("rules")}
-            className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-all ${
+            className={`rounded-full px-4 py-1.5 text-[14px] font-medium transition-all ${
               activeTab === "rules"
                 ? "bg-[var(--card)] text-[var(--text)] shadow-xs"
                 : "text-[var(--text-2)] hover:text-[var(--text)]"
@@ -186,7 +186,7 @@ export function DetectionPage() {
           </button>
           <button
             onClick={() => setActiveTab("liveguard")}
-            className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-all ${
+            className={`rounded-full px-4 py-1.5 text-[14px] font-medium transition-all ${
               activeTab === "liveguard"
                 ? "bg-[var(--card)] text-[var(--text)] shadow-xs"
                 : "text-[var(--text-2)] hover:text-[var(--text)]"
@@ -196,7 +196,7 @@ export function DetectionPage() {
           </button>
           <button
             onClick={() => setActiveTab("baseline")}
-            className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-all ${
+            className={`rounded-full px-4 py-1.5 text-[14px] font-medium transition-all ${
               activeTab === "baseline"
                 ? "bg-[var(--card)] text-[var(--text)] shadow-xs"
                 : "text-[var(--text-2)] hover:text-[var(--text)]"
@@ -206,7 +206,7 @@ export function DetectionPage() {
           </button>
           <button
             onClick={() => setActiveTab("audit")}
-            className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-all ${
+            className={`rounded-full px-4 py-1.5 text-[14px] font-medium transition-all ${
               activeTab === "audit"
                 ? "bg-[var(--card)] text-[var(--text)] shadow-xs"
                 : "text-[var(--text-2)] hover:text-[var(--text)]"
@@ -298,7 +298,7 @@ export function DetectionPage() {
                       <h4 className="text-[17px] font-semibold text-[var(--text)]">{cat.label}</h4>
                       <span className="font-mono text-[12px] text-[var(--text-3)]">{cat.code}</span>
                     </div>
-                    <span className="text-[13px] text-[var(--text-3)]">
+                    <span className="text-[14px] text-[var(--text-3)]">
                       {catRules.length} rule(s)
                     </span>
                   </div>
@@ -419,7 +419,7 @@ export function DetectionPage() {
       >
         {selectedAlert && (
           <div className="space-y-5">
-            <div className="rounded-xl border border-[var(--hairline)]/60 bg-[var(--card-alt)] p-4 text-[13px] leading-relaxed text-[var(--text)]">
+            <div className="rounded-xl border border-[var(--hairline)]/60 bg-[var(--card-alt)] p-4 text-[14px] leading-relaxed text-[var(--text)]">
               {selectedAlert.reason}
             </div>
 
@@ -440,7 +440,7 @@ export function DetectionPage() {
 
             {/* Evidence items */}
             <div>
-              <h4 className="text-[13px] font-semibold text-[var(--text)] mb-2">
+              <h4 className="text-[14px] font-semibold text-[var(--text)] mb-2">
                 Citing Evidence ({selectedAlert.evidence?.length ?? selectedAlert.event_ids.length})
               </h4>
               <div className="space-y-2">
@@ -453,7 +453,7 @@ export function DetectionPage() {
                       <span>{ev.event_id}</span>
                       <span className="text-[var(--text-3)]">{ev.timestamp}</span>
                     </div>
-                    <div className="mt-1 text-[13px] text-[var(--text)]">{ev.summary}</div>
+                    <div className="mt-1 text-[14px] text-[var(--text)]">{ev.summary}</div>
                   </div>
                 ))}
               </div>

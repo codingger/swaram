@@ -143,7 +143,7 @@ export function SimulatorPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-4 text-[13px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-4 text-[14px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
           >
             <Sliders size={14} className="text-[var(--text-3)]" />
             <span>Run settings &rsaquo;</span>

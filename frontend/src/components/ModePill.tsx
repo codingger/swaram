@@ -14,7 +14,7 @@ export function ModePill({ mode, decision, className = "" }: ModePillProps) {
   if (isEnforced) {
     return (
       <span
-        className={`inline-flex items-center gap-1.5 rounded-full bg-[var(--ok-bg)] px-3 py-1 text-[13px] font-medium text-[var(--ok)] border border-[var(--ok)]/30 ${className}`}
+        className={`inline-flex items-center gap-1.5 rounded-full bg-[var(--ok-bg)] px-3 py-1 text-[14px] font-medium text-[var(--ok)] border border-[var(--ok)]/30 ${className}`}
       >
         <Lock size={12} strokeWidth={2} />
         <span>Blocked at gateway</span>
@@ -32,7 +32,7 @@ export function ModePill({ mode, decision, className = "" }: ModePillProps) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border border-dashed border-[var(--hairline)] bg-transparent px-3 py-1 text-[13px] font-medium text-[var(--text-2)] ${className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full border border-dashed border-[var(--hairline)] bg-transparent px-3 py-1 text-[14px] font-medium text-[var(--text-2)] ${className}`}
     >
       <span>{label}</span>
     </span>

@@ -137,7 +137,7 @@ export function CollectorPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-4 text-[13px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
+            className="inline-flex h-9 items-center gap-1.5 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-4 text-[14px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)]"
           >
             <Sliders size={14} className="text-[var(--text-3)]" />
             <span>Collector settings &rsaquo;</span>
@@ -152,7 +152,7 @@ export function CollectorPage() {
       <StatusBanner status={status} onClose={() => setStatus(null)} />
 
       {report && (
-        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-[var(--hairline)]/60 bg-[var(--card)] p-3 text-[13px] text-[var(--text-2)]">
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border border-[var(--hairline)]/60 bg-[var(--card)] p-3 text-[14px] text-[var(--text-2)]">
           <span className="font-semibold text-[var(--text)]">Ingestion Report:</span>
           <span>Valid: <strong className="font-mono text-[var(--ok)]">{report.valid}</strong></span>
           <span>Total input: <strong className="font-mono text-[var(--text)]">{report.total_input}</strong></span>
@@ -228,7 +228,7 @@ export function CollectorPage() {
                 type="file"
                 accept=".json,.jsonl,application/json"
                 onChange={(e) => onFile(e.target.files?.[0])}
-                className="text-[13px] text-[var(--text-2)]"
+                className="text-[14px] text-[var(--text-2)]"
               />
             </div>
           )}

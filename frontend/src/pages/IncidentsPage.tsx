@@ -24,7 +24,7 @@ function AgentRoleBadge({
   const [copied, setCopied] = useState(false);
   return (
     <span
-      className="group relative inline-flex items-center gap-1.5 rounded-md card px-2 py-0.5 text-[13px] font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)]"
+      className="group relative inline-flex items-center gap-1.5 rounded-md card px-2 py-0.5 text-[14px] font-medium text-[var(--text)] transition-colors hover:border-[var(--accent)]"
       title={`Click to copy full ID: ${agentId}`}
     >
       <span className="capitalize">{role}</span>
@@ -174,7 +174,7 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
                       {shortTitle}
                     </div>
 
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[13px] text-[var(--text-2)]">
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[14px] text-[var(--text-2)]">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-[12px] text-[var(--text-3)]">Roles:</span>
                         {a.agent_ids.map((id) => (
@@ -202,7 +202,7 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
               <div className="min-w-0 max-w-xl">
                 <div className="flex items-center gap-2.5">
                   <Pill value={currentAlert.severity} />
-                  <span className="font-mono text-[13px] text-[var(--text-3)]">{currentAlert.rule_id}</span>
+                  <span className="font-mono text-[14px] text-[var(--text-3)]">{currentAlert.rule_id}</span>
                   <span className="text-[14px] text-[var(--text-2)]">&middot; Detected {time(currentAlert.created_at)}</span>
                 </div>
                 <h2 className="mt-3 text-[26px] sm:text-[30px] font-semibold leading-tight tracking-tight text-[var(--text)]">
@@ -302,7 +302,7 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
                       );
                     })}
                   </div>
-                  <div className="mt-2 text-[13px] text-[var(--text-3)]">
+                  <div className="mt-2 text-[14px] text-[var(--text-3)]">
                     Click any event chip to inspect its raw JSON payload in the side drawer.
                   </div>
                 </div>
@@ -347,7 +347,7 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
                           {currentAssessment.best_explanation && (
                             <div>
                               <div className="font-medium text-[var(--text)]">Abductive hypothesis:</div>
-                              <div className="mt-1 rounded-md card p-3 text-[var(--text-2)] text-[13px] leading-relaxed">
+                              <div className="mt-1 rounded-md card p-3 text-[var(--text-2)] text-[14px] leading-relaxed">
                                 {currentAssessment.best_explanation}
                               </div>
                             </div>
@@ -390,7 +390,7 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
                                 {role}
                               </span>
                             </div>
-                            <div className="text-[13px] text-[var(--text-2)]">
+                            <div className="text-[14px] text-[var(--text-2)]">
                               {evt ? `${evt.event_type} &middot; action: ${evt.action}` : "Raw telemetry event"}
                             </div>
                           </div>
@@ -466,12 +466,12 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
         {drawerEvent ? (
           <div className="space-y-4">
             {/* Timestamp Reference Note (Item 4) */}
-            <div className="rounded-lg card-subtle p-3.5 text-[13px] leading-relaxed text-[var(--text-2)] border border-[var(--hairline-subtle)]">
+            <div className="rounded-lg card-subtle p-3.5 text-[14px] leading-relaxed text-[var(--text-2)] border border-[var(--hairline-subtle)]">
               <span className="font-semibold text-[var(--text)]">Timestamp reference:</span> Event <code className="font-mono text-[12px] text-[var(--accent)] font-semibold">timestamp</code> reflects simulator execution time; <code className="font-mono text-[12px] text-[var(--accent)] font-semibold">normalized_at</code> reflects collector ingestion wall-clock time. Raw telemetry data is unaltered.
             </div>
 
             {/* Agent Full ID Card with Copy button */}
-            <div className="rounded-lg card p-3 flex items-center justify-between text-[13px]">
+            <div className="rounded-lg card p-3 flex items-center justify-between text-[14px]">
               <div>
                 <span className="text-[var(--text-3)] block text-[11px] uppercase tracking-wider font-semibold">Full Agent ID</span>
                 <span className="font-mono text-[13px] text-[var(--text)] select-all">{drawerEvent.agent_id}</span>
@@ -493,7 +493,7 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
               <button
                 onClick={copyEventJson}
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-md card px-2.5 py-1 text-[13px] font-medium text-[var(--text-2)] hover:text-[var(--text)]"
+                className="inline-flex items-center gap-1.5 rounded-md card px-2.5 py-1 text-[14px] font-medium text-[var(--text-2)] hover:text-[var(--text)]"
               >
                 {copied ? <Check size={13} className="text-[var(--ok)]" /> : <Copy size={13} />}
                 <span>{copied ? "Copied" : "Copy JSON"}</span>

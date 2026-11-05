@@ -84,7 +84,7 @@ export default function App() {
       {/* 48px Apple-style Global Nav */}
       <GlobalNav currentRoute={route} />
 
-      <main className="mx-auto max-w-[1120px] px-6 py-10 transition-all">
+      <main className={`mx-auto ${cleanRoute === "swarm" ? "max-w-[1280px]" : "max-w-[1120px]"} px-6 py-10 transition-all`}>
         {apiError && (
           <div className="mb-6">
             <Banner kind="error">
