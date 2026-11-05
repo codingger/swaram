@@ -55,6 +55,7 @@ class LiveGuard:
         self.sends: dict[str, NormalizedEvent] = {}  # message_id -> send event (to verify claimed senders)
         self.tainted_msgs: dict[str, str] = {}  # message_id sent by an exposed agent -> original untrusted source
         self.quarantined: list[dict] = []  # untrusted inputs withheld from an agent before it read them
+        self.released: set[str] = set()  # agents a human released: not re-paused for the same risk
         relay = next((r for r in rules if r.rule_id == "SG-027"), None)
         self.relay_params = dict(relay.params) if relay and relay.enabled else {}
         self.untrusted_text: dict[str, dict] = {}  # agent -> tokens/shingles of untrusted content it just read (SG-027)
@@ -123,7 +124,7 @@ class LiveGuard:
         # Re-assess after every event: anomaly evidence can raise risk even before any alert fires.
         if self.mode == "contain":
             for v in assess(self.run_id, self.events, self.agents, alerts, self.rules):
-                if v.risk >= self.pause_at and v.agent_id not in self.paused:
+                if v.risk >= self.pause_at and v.agent_id not in self.paused and v.agent_id not in self.released:
                     self.paused[v.agent_id] = Containment(
                         agent_id=v.agent_id, role=v.role, paused_at_sequence=event.sequence, paused_at=event.timestamp,
                         risk=v.risk, explanation=v.best_explanation, trigger="risk")
@@ -187,11 +188,22 @@ class LiveGuard:
             return
         ref, target = e.payload.get("data_ref"), e.target
         recipient = self.registry.get(target or "")
-        if ref in self.restricted and recipient and ref not in recipient.permissions and target not in self.held:
+        if (ref in self.restricted and recipient and ref not in recipient.permissions and target not in self.held
+                and target not in self.released):
             self.held[target] = Containment(agent_id=target, role=recipient.role, scope="egress", trigger="need_to_know",
                                             paused_at_sequence=e.sequence,
                                             paused_at=e.timestamp, risk=0.0,
                                             explanation=f"received {ref} from {e.agent_id} without permission to hold it")
+
+    def release(self, agent_id: str, egress_only: bool = False) -> str:
+        """A human reviewed the containment and lets the agent continue (see services/review.py)."""
+        self.released.add(agent_id)
+        held = self.held.pop(agent_id, None)
+        paused = None if egress_only else self.paused.pop(agent_id, None)
+        self.exposed.pop(agent_id, None)
+        if not (held or paused):
+            return "agent was not contained any more"
+        return "released: " + " and ".join(x for x, c in (("egress hold lifted", held), ("agent un-paused", paused)) if c)
 
     # ---------------------------------------------------------------- results
     def report(self, run: Run) -> LiveReport:

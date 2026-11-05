@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -26,7 +26,11 @@ def get_pipeline() -> Pipeline:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.services import notify
+    from app.services.live_hub import get_hub
+
     get_pipeline().seed_defaults()
+    notify.install(get_hub())  # opt-in: SWARMGUARD_WEBHOOK_URL
     yield
 
 
@@ -132,6 +136,119 @@ def run_pipeline(run_id: str, p: Pipeline = P):
 
 
 # ------------------------------------------------------------------ modules
+# ------------------------------------------------------------------ live streaming (for the live UI)
+@app.post("/api/runs/start")
+def start_run(config: ScenarioConfig, p: Pipeline = P) -> dict[str, Any]:
+    """Start a run in the background; watch it on the /api/live WebSocket. Returns at once."""
+    if config.workspace_dir:
+        raise HTTPException(400, "workspace_dir can't be set through the API")
+    return {"run_id": p.start_run(config), "stream": "/api/live"}
+
+
+@app.get("/api/live/active")
+def active_runs() -> list[dict[str, Any]]:
+    from app.services.pipeline import ACTIVE_RUNS
+
+    return list(ACTIVE_RUNS.values())
+
+
+@app.websocket("/api/live")
+async def live(ws: WebSocket):
+    """Every event, detection, containment and quarantine, pushed as it happens.
+
+    Query: ?run_id=… to follow one run; ?since=<seq> to replay what you missed (default: the recent history).
+    """
+    import asyncio
+
+    from app.services.live_hub import get_hub
+
+    await ws.accept()
+    hub = get_hub()
+    run_id = ws.query_params.get("run_id") or None
+    since = int(ws.query_params.get("since") or 0)
+    sub = hub.subscribe(asyncio.get_running_loop(), run_id)
+    try:
+        await ws.send_json({"type": "hello", "seq": 0, "run_id": run_id, "data": {"subscribers": hub.subscribers}})
+        for msg in hub.replay(run_id, since):
+            await ws.send_json(msg)
+        while True:
+            await ws.send_json(await sub.queue.get())
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        hub.unsubscribe(sub)
+
+
+# ------------------------------------------------------------------ live ingest (real agents outside the simulator)
+@app.post("/api/ingest/sessions")
+def ingest_open(body: dict[str, Any], p: Pipeline = P) -> dict[str, Any]:
+    from app.services import ingest
+
+    return ingest.open_session(p, body.get("name") or "external", body.get("agents") or [],
+                               body.get("live_guard", "contain"), float(body.get("pause_at", 0.6)))
+
+
+@app.post("/api/ingest/{run_id}/gate")
+def ingest_gate(run_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Ask BEFORE acting: {"allow": false, "reason": ...} means the agent must not do it."""
+    from app.services import ingest
+
+    if not body.get("agent_id"):
+        raise HTTPException(400, "agent_id is required")
+    return ingest.session(run_id).gate(body)
+
+
+@app.post("/api/ingest/{run_id}/events")
+def ingest_events(run_id: str, body: Any = Body(...), format: str | None = None, p: Pipeline = P) -> dict[str, Any]:
+    """Raw events (a list or one object), or ?format=otel|langsmith to send OpenTelemetry spans / LangSmith runs."""
+    from app.modules.collector.formats import convert
+    from app.services import ingest
+
+    if format:
+        events, _ = convert(format, body, run_id)
+    else:
+        events = body if isinstance(body, list) else [body]
+    return ingest.add_events(p, run_id, events)
+
+
+@app.post("/api/convert")
+def convert_logs(body: Any = Body(...), format: str = "otel", run_id: str = "run-imported") -> dict[str, Any]:
+    """Preview how OpenTelemetry spans (format=otel) or LangSmith runs (format=langsmith) map to SwarmGuard events."""
+    from app.modules.collector.formats import convert
+
+    events, agents = convert(format, body, run_id)
+    return {"events": events, "agents": agents}
+
+
+@app.post("/api/ingest/{run_id}/finish")
+def ingest_finish(run_id: str, p: Pipeline = P) -> dict[str, Any]:
+    from app.services import ingest
+
+    return ingest.finish(p, run_id)
+
+
+# ------------------------------------------------------------------ review queue (Security Response)
+@app.get("/api/reviews")
+def reviews(status: str | None = None, run_id: str | None = None, p: Pipeline = P) -> list[dict[str, Any]]:
+    from app.services import review
+
+    return review.items(p.store, status, run_id)
+
+
+@app.post("/api/reviews/{review_id}")
+def decide_review(review_id: str, body: dict[str, Any], p: Pipeline = P) -> dict[str, Any]:
+    """{"decision": "release" | "confirm", "note": "..."}"""
+    from app.services import review
+
+    return review.decide(p.store, review_id, body.get("decision", ""), body.get("note"))
+
+
+@app.get("/api/runs/{run_id}/integrity")
+def run_integrity(run_id: str, p: Pipeline = P) -> dict[str, Any]:
+    """Tamper evidence: was any stored event edited, deleted or reordered since collection?"""
+    return p.integrity(run_id)
+
+
 @app.post("/api/simulate")
 def simulate(config: ScenarioConfig, p: Pipeline = P):
     if config.workspace_dir:

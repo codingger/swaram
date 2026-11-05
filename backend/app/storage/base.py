@@ -14,6 +14,7 @@ COLLECTIONS = (
     "detection_rules",
     "response_policies",
     "evaluations",
+    "reviews",
 )
 
 

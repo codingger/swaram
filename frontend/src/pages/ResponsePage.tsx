@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ResultViewer, type Column } from "../components/ResultViewer";
+import { ReviewQueueCard } from "./ReviewQueueCard";
 import { Badge, Banner, Button, Card, Field, OutputSelect, PageHeader, RunSelect, StatusBanner, inputCls, type Status } from "../components/ui";
 import { shortId } from "../lib/format";
 import { useAppState, useRunData } from "../state";
@@ -71,6 +72,8 @@ export function ResponsePage() {
       <PageHeader step={4} module="response" title="Security Response"
         description="Maps each alert to allow / alert / block / pause using a configurable policy, and links every response record to its alert ID." />
       <StatusBanner status={status} onClose={() => setStatus(null)} />
+
+      <ReviewQueueCard />
 
       <Banner kind="info">
         <strong>would_block</strong> means the policy would stop this, but nothing was denied. <strong>blocked</strong> is only recorded when the
