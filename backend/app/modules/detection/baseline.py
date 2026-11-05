@@ -54,6 +54,8 @@ def agent_behaviors(events: list[NormalizedEvent]) -> dict[str, dict[str, list[s
     for e in events:
         if e.event_type == "observation":  # resource-side telemetry about an agent, not the agent's own action
             continue
+        if e.payload.get("untrusted") is True:  # content delivered to the agent (email, ticket): an input, not behavior
+            continue
         out[e.agent_id][behavior_key(e)].append(e.event_id)
     return out
 
