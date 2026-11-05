@@ -149,7 +149,7 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
     taint: dict[str, _Taint] = {}
     reads: list[NormalizedEvent] = []  # successful restricted reads so far (for inference under missing data)
     handoffs: list[NormalizedEvent] = []  # restricted data_ref sent to agents not permitted to hold it
-    coverage = LogCoverage(events)
+    coverage = LogCoverage.of(events)
     alerts = []
 
     def within(t: _Taint, e: NormalizedEvent) -> bool:
@@ -254,7 +254,7 @@ def rule_indirect_channel(rule: DetectionRule, run_id: str, events: list[Normali
     agent_taint: dict[str, _Taint] = {}  # agent -> how restricted data reached it
     store_taint: dict[str, _Taint] = {}  # shared resource -> who put restricted data there
     restricted_hashes: set[str] = set()  # content fingerprints seen on restricted reads (DLP-style)
-    coverage = LogCoverage(events)
+    coverage = LogCoverage.of(events)
     alerts, seen = [], set()
 
     def fresh(t: _Taint, e: NormalizedEvent) -> bool:

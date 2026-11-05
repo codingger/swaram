@@ -89,3 +89,19 @@ POST /api/ingest/{run_id}/finish  -> runs collect, detect, respond, evaluate; pu
 
 `event_type` is one of `message`, `tool_call`, `resource_access`, `data_transfer`, `task`. `event_id`, `timestamp` and
 `sequence` are filled in if missing.
+
+## Performance
+
+The live guard re-checks every rule over the run so far after each event, so its cost grows with the square of the
+run length. Four caches remove the repeated work without changing any result (all 206 snapshotted outputs, alerts,
+risk scores, live decisions and benchmark numbers, are identical before and after): timestamp parsing, SG-020's text
+scan, one log-coverage index per detection pass, and one-pass per-agent facts in risk scoring.
+
+| Live guard, `sg003_leak_chain` | Before | After |
+|---|---|---|
+| 5 agents (80 events) | 405 ms | 104 ms |
+| 10 agents (177 events) | 1.7 s | 0.41 s |
+| 20 agents (369 events) | 7.6 s | 1.6 s |
+
+Very long sessions (thousands of events) would still slow down; the next step would be evaluating the heavy rules over
+a recent window, which trades exactness on whole-run rules (e.g. SG-016 salami) and so is not done yet.
