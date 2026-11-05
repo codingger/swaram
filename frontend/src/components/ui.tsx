@@ -54,15 +54,15 @@ export const inputCls =
 
 /** iOS/macOS-style segmented control. */
 export function Segmented<T extends string | number>({ options, value, onChange, full = false, size = "md" }: {
-  options: { value: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; full?: boolean; size?: "sm" | "md";
+  options: { value: T; label: ReactNode; disabled?: boolean }[]; value: T; onChange: (v: T) => void; full?: boolean; size?: "sm" | "md";
 }) {
   return (
     <div role="radiogroup" className={`${full ? "flex w-full" : "inline-flex"} rounded-[10px] bg-black/[0.06] p-[3px]`}>
       {options.map((o) => {
         const on = o.value === value;
         return (
-          <button key={String(o.value)} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.value)}
-            className={`${full ? "flex-1" : ""} rounded-[8px] font-medium transition-all duration-150 ${size === "sm" ? "px-3 py-1 text-[12px]" : "px-3.5 py-1.5 text-[13px]"} ${on ? "bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-muted hover:text-ink"}`}>
+          <button key={String(o.value)} type="button" role="radio" aria-checked={on} disabled={o.disabled} onClick={() => onChange(o.value)}
+            className={`${full ? "flex-1" : ""} disabled:cursor-not-allowed disabled:opacity-40 rounded-[8px] font-medium transition-all duration-150 ${size === "sm" ? "px-3 py-1 text-[12px]" : "px-3.5 py-1.5 text-[13px]"} ${on ? "bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-muted hover:text-ink"}`}>
             {o.label}
           </button>
         );

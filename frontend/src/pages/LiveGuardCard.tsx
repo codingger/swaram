@@ -51,6 +51,8 @@ export function LiveGuardCard() {
   const [count, setCount] = useState<AgentCount>(5);
   const [mode, setMode] = useState<"contain" | "detect">("contain");
   const [gateway, setGateway] = useState<GatewayMode>("monitor");
+  const [ai, setAi] = useState(false);
+  const gemini = meta?.agent_backends?.find((b) => b.id === "gemini");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const report = stored.data;
@@ -67,7 +69,8 @@ export function LiveGuardCard() {
       const res = isReplay
         ? await api.replay({ case: scenario.slice("replay:".length), agent_count: count, seed, live_guard: mode })
         : await api.simulate({ scenario_id: scenario.slice("builtin:".length), agent_count: count, seed: 7, gateway_mode: gateway,
-            drop_rate: 0, agent_backend: "deterministic", auto_pipeline: true, live_guard: mode, persist: true });
+            drop_rate: 0, agent_backend: ai ? "gemini" : "deterministic", agent_mode: ai ? "autonomous" : "scripted",
+            auto_pipeline: true, live_guard: mode, persist: true });
       await refreshRuns();
       selectRun(res.run.run_id);
     } catch (e) {
@@ -85,7 +88,7 @@ export function LiveGuardCard() {
         agent reaching {Math.round((report?.pause_at ?? 0.6) * 100)}% risk is paused, and an agent handed restricted data it may not hold
         gets its outbound transfers held. Their next actions are denied <strong>before they execute</strong>.
       </p>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Field label="Scenario" hint={isReplay ? "Planted into a fresh realistic run at a random point." : undefined}>
           <select className={inputCls} value={scenario} onChange={(e) => setScenario(e.target.value)}>
             <optgroup label={`Simulator scenarios (${simScenarios.length})`}>
@@ -101,6 +104,11 @@ export function LiveGuardCard() {
         </Field>
         <Field label="Agents" asDiv>
           <Segmented full value={count} onChange={setCount} options={[5, 10, 20].map((n) => ({ value: n as AgentCount, label: n }))} />
+        </Field>
+        <Field label="Driven by" asDiv hint={isReplay ? "Replays are scripted." : ai ? "Gemini decides each agent's actions (~1 min)." : undefined}>
+          <Segmented full value={isReplay ? "scripted" : ai ? "ai" : "scripted"} onChange={(v) => setAi(v === "ai")}
+            options={[{ value: "scripted", label: "Scripted" },
+              { value: "ai", label: "AI decides", disabled: isReplay || !gemini?.available }]} />
         </Field>
         <Field label="Mode" asDiv>
           <Segmented full value={mode} onChange={setMode} options={[{ value: "contain", label: "Contain" }, { value: "detect", label: "Detect only" }]} />

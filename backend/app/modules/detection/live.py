@@ -6,12 +6,21 @@ agent once its risk reaches `pause_at`. The agent runner asks `gate()` before ev
 so a paused agent's later actions are denied *before they execute* (a real gateway
 denial, recorded as `blocked`, never a post-hoc claim).
 
-The runner only needs this duck-typed interface: start(run_id, agents), gate(agent_id),
-observe(raw_event). Nothing else in the simulator depends on detection.
+Hijack tripwire: an agent that has just ingested untrusted content (an email, a web page, a planted
+message; SG-012's notion of exposure) and then attempts an out-of-policy action is stopped *before
+that first action runs*, instead of after risk builds up. This is what stops a prompt-injected AI
+agent before the leak, not one step late.
+
+The runner only needs this duck-typed interface: start(run_id, agents), gate(agent_id, event_type,
+target, action=..., resource=..., payload=...), observe(raw_event). Nothing else in the simulator
+depends on detection.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.modules.collector.normalizer import collect
+from app.modules.detection.advanced_rules import _ingests, out_of_policy
 from app.modules.detection.risk import assess
 from app.modules.detection.rules import run_rules
 from app.modules.simulator.world import EXTERNAL_PREFIX, RESTRICTED_RESOURCES
@@ -38,6 +47,10 @@ class LiveGuard:
         self.restricted = set(next((r.params.get("restricted_resources", []) for r in rules if r.rule_id == "SG-001"),
                                    RESTRICTED_RESOURCES))
         self.registry: dict[str, Agent] = {}
+        hijack = next((r for r in rules if r.rule_id == "SG-012"), None)
+        self.hijack_params = dict(hijack.params) if hijack else {}
+        self.exposure_steps = int(self.hijack_params.get("max_steps", 5))
+        self.exposed: dict[str, dict] = {}  # agent -> {"left": steps, "source": what it ingested}
 
     # ---------------------------------------------------------------- runner interface
     def start(self, run_id: str, agents: list[Agent]) -> None:
@@ -45,7 +58,8 @@ class LiveGuard:
         self.roles = {a.agent_id: a.role for a in agents}
         self.registry = {a.agent_id: a for a in agents}
 
-    def gate(self, agent_id: str, event_type: str | None = None, target: str | None = None) -> str | None:
+    def gate(self, agent_id: str, event_type: str | None = None, target: str | None = None, *, action: str | None = None,
+             resource: str | None = None, payload: dict | None = None, sequence: int = 0, timestamp: str = "") -> str | None:
         """Called BEFORE an action executes. A reason means: deny it."""
         if self.mode != "contain":
             return None
@@ -58,6 +72,18 @@ class LiveGuard:
             hold.blocked_actions += 1
             return (f"egress held since event #{hold.paused_at_sequence}: agent received restricted data it may not hold "
                     f"(need-to-know)")
+        exposure = self.exposed.get(agent_id)
+        if exposure and self.hijack_params and event_type:
+            pending = SimpleNamespace(agent_id=agent_id, event_type=event_type, action=action or "", target=target,
+                                      resource=resource, payload=payload or {}, status="success")
+            if out_of_policy(pending, self.registry, self.hijack_params):
+                what = f"{action or event_type} {resource or target or ''}".strip()
+                self.paused[agent_id] = Containment(
+                    agent_id=agent_id, role=self.roles.get(agent_id), paused_at_sequence=sequence, paused_at=timestamp,
+                    risk=1.0, blocked_actions=1, trigger="hijack_tripwire",
+                    explanation=f"tried {what} right after ingesting untrusted content ({exposure['source']}): likely "
+                                f"prompt injection, stopped before it ran")
+                return f"blocked before execution: out-of-policy action right after untrusted input ({exposure['source']})"
         return None
 
     def observe(self, raw: RawEvent) -> None:
@@ -66,6 +92,7 @@ class LiveGuard:
             return
         event = normalized[0]
         self.events.append(event)
+        self._track_exposure(event)
         self._hold_egress(event)
         alerts = run_rules(self.run_id, self.events, self.agents, self.rules)
         for al in alerts:
@@ -82,7 +109,7 @@ class LiveGuard:
                 if v.risk >= self.pause_at and v.agent_id not in self.paused:
                     self.paused[v.agent_id] = Containment(
                         agent_id=v.agent_id, role=v.role, paused_at_sequence=event.sequence, paused_at=event.timestamp,
-                        risk=v.risk, explanation=v.best_explanation)
+                        risk=v.risk, explanation=v.best_explanation, trigger="risk")
 
     def replay(self, timeline: list[dict]) -> list[dict]:
         """Stream a recorded timeline through the guard as if it were happening now.
@@ -93,13 +120,27 @@ class LiveGuard:
         out = []
         for raw in timeline:
             e = dict(raw)
-            reason = self.gate(e["agent_id"], e.get("event_type"), e.get("target"))
+            reason = self.gate(e["agent_id"], e.get("event_type"), e.get("target"), action=e.get("action"),
+                               resource=e.get("resource"), payload=e.get("payload"), sequence=e.get("sequence") or 0,
+                               timestamp=e.get("timestamp") or "")
             if reason:
                 e.update(status="denied", gateway_decision="blocked",
                          payload={**(e.get("payload") or {}), "quarantined": True, "gateway_reason": reason})
             self.observe(RawEvent.model_validate(e))
             out.append(e)
         return out
+
+    def _track_exposure(self, e: NormalizedEvent) -> None:
+        """Mirror SG-012's window: an agent stays 'exposed' for a few of its own steps after untrusted input."""
+        if not self.hijack_params:
+            return
+        ex = self.exposed.get(e.agent_id)
+        if ex:
+            ex["left"] -= 1
+            if ex["left"] <= 0:
+                self.exposed.pop(e.agent_id, None)
+        if e.status == "success" and _ingests(e, self.hijack_params):
+            self.exposed[e.agent_id] = {"left": self.exposure_steps, "source": e.resource or e.event_type}
 
     def _hold_egress(self, e: NormalizedEvent) -> None:
         """Targeted containment: an agent handed restricted data it isn't permitted to hold may keep working,
@@ -109,7 +150,8 @@ class LiveGuard:
         ref, target = e.payload.get("data_ref"), e.target
         recipient = self.registry.get(target or "")
         if ref in self.restricted and recipient and ref not in recipient.permissions and target not in self.held:
-            self.held[target] = Containment(agent_id=target, role=recipient.role, scope="egress", paused_at_sequence=e.sequence,
+            self.held[target] = Containment(agent_id=target, role=recipient.role, scope="egress", trigger="need_to_know",
+                                            paused_at_sequence=e.sequence,
                                             paused_at=e.timestamp, risk=0.0,
                                             explanation=f"received {ref} from {e.agent_id} without permission to hold it")
 
@@ -150,6 +192,7 @@ class LiveGuard:
             "attack_actions": len(attack),
             "attack_actions_completed": len(completed),
             "attack_actions_blocked_by_pause": len(stopped_by_pause),
+            "stopped_before_first_harm": sum(1 for c in self.paused.values() if c.trigger == "hijack_tripwire"),
             "blocked_actions_total": sum(c.blocked_actions for c in [*self.paused.values(), *self.held.values()]),
         }
         return LiveReport(run_id=self.run_id, mode=self.mode, pause_at=self.pause_at, events_processed=len(self.events),

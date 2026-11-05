@@ -300,6 +300,7 @@ class Containment(BaseModel):
     risk: float
     explanation: Optional[str] = None
     blocked_actions: int = 0
+    trigger: Optional[str] = None  # risk | hijack_tripwire (blocked before its first harmful action) | need_to_know
 
 
 class LiveReport(BaseModel):

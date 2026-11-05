@@ -3,6 +3,7 @@
     python scripts/generate_dataset.py                       # default batch -> datasets/<date>
     python scripts/generate_dataset.py --runs 5 --learn 3    # 5 runs per scenario
     python scripts/generate_dataset.py --out datasets/night1 # same folder again = resume
+    python scripts/generate_dataset.py --live-guard contain  # also stop hijacked agents mid-run
     python scripts/generate_dataset.py --dry-run             # show the plan and model-call estimate only
 
 Needs GEMINI_API_KEY in backend/.env (or --backend deterministic for an offline smoke test).
@@ -31,12 +32,14 @@ def main() -> None:
     ap.add_argument("--agents", type=int, default=5, choices=[3, 5, 10, 20])
     ap.add_argument("--backend", default="gemini")
     ap.add_argument("--scenarios", nargs="*", default=DEFAULT_SCENARIOS)
+    ap.add_argument("--live-guard", default="off", choices=["off", "detect", "contain"],
+                    help="stream test runs through the live guard; contain also blocks and pauses")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
     get_settings()  # loads backend/.env
 
     cfg = BatchConfig(out_dir=args.out, scenarios=args.scenarios, runs_per_scenario=args.runs, learn_runs=args.learn,
-                      agent_count=args.agents, backend=args.backend)
+                      agent_count=args.agents, backend=args.backend, live_guard=args.live_guard)
     plan = planned_runs(cfg)
     calls = len(plan) * calls_per_run(cfg.agent_count) if cfg.backend != "deterministic" else 0
     print(f"Batch: {len(plan)} runs ({cfg.learn_runs} learning + {len(plan) - cfg.learn_runs} test), "
