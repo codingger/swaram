@@ -21,7 +21,9 @@ Severity = Literal["low", "medium", "high", "critical"]
 ResponseDecision = Literal["allow", "alert", "block", "pause"]
 ResponsePolicyMode = Literal["simulate", "enforce"]
 # `blocked` is only ever recorded when the controlled gateway actually denied a request.
-ResponseOutcome = Literal["allowed", "alerted", "would_block", "would_pause", "blocked"]
+# contained = the live guard paused / held the agent mid-run (no later action needed denying); blocked = an action was
+# actually denied before it executed.
+ResponseOutcome = Literal["allowed", "alerted", "would_block", "would_pause", "blocked", "contained"]
 AlertStatus = Literal["open", "responded", "contained"]
 
 AGENT_COUNTS = (3, 5, 10, 20)
@@ -105,6 +107,7 @@ class Run(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)
     labels: RunLabels = Field(default_factory=RunLabels)
     dropped_event_ids: list[str] = Field(default_factory=list)
+    log_anchor: Optional[str] = None  # hash-chain anchor of the collected log (collector/integrity.py)
 
 
 class SimulationResult(BaseModel):
@@ -133,9 +136,10 @@ class NormalizedEvent(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     summary: str
     issues: list[str] = Field(default_factory=list)
-    raw_hash: str
-    raw: dict[str, Any]  # original evidence, untouched
+    raw_hash: str  # hash of the event exactly as received (before redaction)
+    raw: dict[str, Any]  # the event as received, with personal data redacted (see collector/privacy.py)
     normalized_at: str
+    chain_hash: Optional[str] = None  # tamper-evident log: sha256(previous chain_hash + this event's content)
 
 
 class CollectorIssue(BaseModel):
@@ -153,6 +157,9 @@ class CollectionReport(BaseModel):
     duplicates: int
     warnings: list[CollectorIssue] = Field(default_factory=list)
     errors: list[CollectorIssue] = Field(default_factory=list)
+    redactions: int = 0  # personal-data values replaced by pseudonyms
+    ai: dict[str, int] = Field(default_factory=dict)  # events driven by an AI model: decisions, fallbacks, refusals, exposed
+    log_anchor: Optional[str] = None  # last chain_hash: record it elsewhere to prove the log wasn't altered
 
 
 class CollectRequest(BaseModel):
@@ -302,7 +309,8 @@ class Containment(BaseModel):
     risk: float
     explanation: Optional[str] = None
     blocked_actions: int = 0
-    trigger: Optional[str] = None  # risk | hijack_tripwire (blocked before its first harmful action) | need_to_know
+    trigger: Optional[str] = None  # risk | hijack_tripwire | need_to_know | policy | operator
+    rule_id: Optional[str] = None  # the alert's rule, when the response policy triggered it
 
 
 class LiveReport(BaseModel):
@@ -345,7 +353,9 @@ class ResponsePolicy(BaseModel):
     severity_actions: dict[Severity, ResponseDecision] = Field(
         default_factory=lambda: {"low": "alert", "medium": "alert", "high": "block", "critical": "pause"}
     )
-    rule_overrides: dict[str, ResponseDecision] = Field(default_factory=dict)
+    # Newer rules: a hijacked agent is paused; spoofed authority and worm relays are blocked.
+    rule_overrides: dict[str, ResponseDecision] = Field(
+        default_factory=lambda: {"SG-012": "pause", "SG-026": "block", "SG-027": "block"})
 
 
 class ResponseAction(BaseModel):

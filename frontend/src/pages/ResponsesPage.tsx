@@ -8,6 +8,7 @@ import { Card, Empty } from "../components/ui";
 import { shortId, time } from "../lib/format";
 import { getAgentRole } from "../lib/incidentHelper";
 import { ShieldCheck, ShieldAlert, Sliders } from "lucide-react";
+import { ReviewQueueCard } from "./ReviewQueueCard";
 import type { ResponseAction } from "../types";
 
 export function ResponsesPage() {
@@ -50,6 +51,9 @@ export function ResponsesPage() {
           </a>
         }
       />
+
+      {/* Human review of live containment (paused agents, held egress, quarantined inputs) */}
+      <ReviewQueueCard />
 
       {/* Top Banner: Data-dependent honesty */}
       {responses.length > 0 && (
@@ -184,7 +188,7 @@ export function ResponsesPage() {
                   <span className="text-[22px] font-semibold tracking-tight text-[var(--text)] uppercase">
                     {r.decision}
                   </span>
-                  <ModePill mode={r.mode} decision={r.decision} />
+                  <ModePill mode={r.mode} decision={r.decision} outcome={r.outcome} />
                   <span className="rounded-md card-subtle px-2 py-0.5 font-mono text-[12px] text-[var(--text-3)]">
                     outcome: {r.outcome}
                   </span>

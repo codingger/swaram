@@ -1,5 +1,5 @@
 import type {
-  Agent, AgentAssessment, Alert, AuditItem, BaselineSummary, GeminiQuotaStatus, BenchmarkResult, LiveReport, ReplayCase, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
+  Agent, AgentAssessment, Alert, AuditItem, BaselineSummary, GeminiQuotaStatus, ReviewItem, BenchmarkResult, LiveReport, ReplayCase, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
   NormalizedEvent, RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult,
   SuiteRequest, SuiteResult, AgentGraph,
 } from "./types";
@@ -62,6 +62,14 @@ export const api = {
     post<SimulationResult>("/detection/replay", body),
   baseline: () => request<BaselineSummary>("/detection/baseline"),
   geminiQuota: () => request<GeminiQuotaStatus>("/gemini/quota"),
+  reviews: (status?: string) => request<ReviewItem[]>(`/reviews${status ? `?status=${status}` : ""}`),
+  decideReview: (id: string, decision: "release" | "confirm", note?: string) =>
+    request<ReviewItem>(`/reviews/${id}`, { method: "POST", body: JSON.stringify({ decision, note }) }),
+  operateAgent: (runId: string, agentId: string, action: "pause" | "hold_egress", note?: string) =>
+    request<{ result: string }>(`/live/${runId}/agents/${agentId}`, { method: "POST", body: JSON.stringify({ action, note }) }),
+  stopRun: (runId: string, note?: string) =>
+    request<{ paused: Record<string, string> }>(`/live/${runId}/stop`, { method: "POST", body: JSON.stringify({ note }) }),
+  startRun: (cfg: ScenarioConfig) => request<{ run_id: string; stream: string }>("/runs/start", { method: "POST", body: JSON.stringify(cfg) }),
   benchmark: (full = false) => post<BenchmarkResult>(`/detection/benchmark?full=${full}`, {}),
   trainBaseline: (body: { source: "synthetic" | "run" | "ai"; run_id?: string; confirm_clean?: boolean; runs?: number }) => post<BaselineSummary>("/detection/baseline", body),
   rules: () => request<DetectionRule[]>("/detection-rules"),

@@ -421,7 +421,7 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="text-[14px] font-semibold text-[var(--text)]">Recommended Action:</span>
-                        <ModePill mode={currentResponse.mode} decision={currentResponse.decision} />
+                        <ModePill mode={currentResponse.mode} decision={currentResponse.decision} outcome={currentResponse.outcome} />
                       </div>
                       <span className="text-[12px] text-[var(--text-3)]">
                         Policy ID: <code className="font-mono">{currentResponse.policy_id}</code>

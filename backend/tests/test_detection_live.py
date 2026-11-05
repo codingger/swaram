@@ -27,9 +27,10 @@ def live(pipe, scenario, agents=5, mode="contain", gateway="monitor", seed=7):
 
 def test_unauthorized_agent_is_paused_mid_attack(pipe):
     res = live(pipe, "unauthorized_access")
-    m, (c,) = res.live_report.metrics, res.live_report.containment
-    attacker = res.run.labels.malicious_agent_ids[0]
-    assert c.agent_id == attacker and c.scope == "agent" and c.risk >= 0.6
+    m, attacker = res.live_report.metrics, res.run.labels.malicious_agent_ids[0]
+    assert {x.agent_id for x in res.live_report.containment} == {attacker}  # only the attacker is ever contained
+    c = next(x for x in res.live_report.containment if x.scope == "agent")
+    assert c.risk >= 0.6
     assert m["attack_actions_blocked_by_pause"] >= 1 and m["paused_innocent"] == 0
     blocked = [e for e in res.events if e.payload.get("quarantined")]
     assert blocked and all(e.agent_id == attacker and e.status == "denied" and e.gateway_decision == "blocked" for e in blocked)

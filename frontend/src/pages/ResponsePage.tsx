@@ -18,7 +18,7 @@ const columns: Column<ResponseAction>[] = [
     render: (a) => (
       <div className="flex items-center gap-2">
         <span className="font-semibold capitalize text-[var(--text)]">{a.decision}</span>
-        <ModePill mode={a.mode} decision={a.decision} />
+        <ModePill mode={a.mode} decision={a.decision} outcome={a.outcome} />
       </div>
     ),
   },
@@ -286,7 +286,7 @@ export function ResponsePage() {
           <div className="flex items-center gap-2">
             <span className="text-[18px] font-semibold uppercase">{selectedAction?.decision}</span>
             {selectedAction && (
-              <ModePill mode={selectedAction.mode} decision={selectedAction.decision} />
+              <ModePill mode={selectedAction.mode} decision={selectedAction.decision} outcome={selectedAction.outcome} />
             )}
           </div>
         }

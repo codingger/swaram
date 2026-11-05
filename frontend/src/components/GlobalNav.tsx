@@ -10,6 +10,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { id: "overview", path: "#/", label: "Overview" },
+  { id: "live", path: "#/live", label: "Live" },
   { id: "incidents", path: "#/incidents", label: "Incidents" },
   { id: "swarm", path: "#/swarm", label: "Swarm" },
   { id: "responses", path: "#/responses", label: "Responses" },
@@ -65,13 +66,13 @@ export function GlobalNav({ currentRoute }: { currentRoute: string }) {
         </nav>
 
         {/* Right Controls: Run Selector & Theme Toggle */}
-        <div className="shrink-0 flex items-center gap-2 sm:gap-3">
+        <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
           {runs.length > 0 && (
-            <div className="relative">
+            <div className="relative min-w-0">
               <select
                 value={selectedRunId ?? ""}
                 onChange={(e) => selectRun(e.target.value)}
-                className="h-7 cursor-pointer appearance-none rounded-full border border-[var(--hairline)]/60 bg-[var(--card)] pl-3 pr-7 text-[12px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                className="h-7 w-full min-w-[88px] max-w-[140px] sm:max-w-[320px] truncate cursor-pointer appearance-none rounded-full border border-[var(--hairline)]/60 bg-[var(--card)] pl-3 pr-7 text-[12px] font-medium text-[var(--text)] shadow-xs transition-colors hover:border-[var(--hairline)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                 aria-label="Select Run"
               >
                 {runs.map((r) => (

@@ -30,6 +30,8 @@ from app.schemas import (
 from app.storage.base import Store
 from app.timeutil import now_iso
 
+ACTIVE_RUNS: dict[str, dict] = {}  # background runs in progress
+
 # Downstream outputs invalidated when an upstream stage re-runs.
 DOWNSTREAM = {
     "collected": ("normalized_events", "alerts", "response_actions"),
@@ -93,7 +95,11 @@ class Pipeline:
 
     def rules(self) -> list[DetectionRule]:
         docs = self.store.list("detection_rules")
-        rules = [DetectionRule.model_validate(d) for d in docs] or [r.model_copy(deep=True) for r in DEFAULT_RULES]
+        rules = [DetectionRule.model_validate(d) for d in docs]
+        # Saved rules override defaults; any default not saved yet (never seeded, or added in a newer version) still
+        # applies. Without this, the first call saved only SG-004 and every later call silently ran SG-004 alone.
+        have = {r.rule_id for r in rules}
+        rules += [r.model_copy(deep=True) for r in DEFAULT_RULES if r.rule_id not in have]
         anomaly = next((r for r in rules if r.rule_id == "SG-004"), None)
         if anomaly and not baseline.is_current(anomaly.params.get("profile")):
             anomaly.params["profile"] = self._synthetic_profile()  # train once, lazily (or upgrade an old version)
@@ -255,17 +261,33 @@ class Pipeline:
             self.store.delete_run_docs(col, run_id)
 
     # ---------------------------------------------------------------- stages
-    def simulate(self, config: ScenarioConfig) -> SimulationResult:
+    def simulate(self, config: ScenarioConfig, run_id: str | None = None) -> SimulationResult:
+        """Run a scenario; every event, detection and containment is also pushed to live UIs as it happens."""
         from app.services import quota
+        from app.services.live_hub import LiveStream, get_hub
 
         quota.check_run(config)  # refuse up front rather than fall back to scripted text mid-run
+        hub = get_hub()
+        run_id = run_id or f"run-{uuid.uuid4().hex[:8]}"
+        hub.publish("run_started", {"config": config.model_dump(mode="json")}, run_id)
         before = quota.quota_status()["calls_today"] if config.agent_backend == "gemini" else None
-        live = LiveGuard(self.rules(), config.live_guard, config.pause_at) if config.live_guard != "off" else None
-        result = run_simulation(config, live=live)
+        guard = (LiveGuard(self.rules(), config.live_guard, config.pause_at, policy=self.policy())
+                 if config.live_guard != "off" else None)
+        from app.services import review
+
+        stream = LiveStream(hub, guard, review.recorder(self.store, run_id) if config.persist else None)
+        try:
+            result = run_simulation(config, run_id=run_id, live=stream)
+        except Exception as exc:
+            hub.publish("run_failed", {"error": str(exc)}, run_id)
+            raise
+        finally:
+            stream.close()
         if before is not None:
             result.run.counts["model_calls"] = max(0, quota.quota_status()["calls_today"] - before)
-        if live:
-            result.live_report = live.report(result.run)
+            hub.publish("quota", quota.quota_status())
+        if guard:
+            result.live_report = guard.report(result.run)
         if config.persist:
             run_id = result.run.run_id
             self.store.put_many("agents", [(a.agent_id, _dump(a)) for a in result.agents])
@@ -276,7 +298,39 @@ class Pipeline:
             if config.auto_pipeline:
                 self.run_all(run_id)
                 result.run = self.get_run(run_id)
+        hub.publish("run_finished", {
+            "persisted": config.persist, "counts": result.run.counts, "stages": result.run.stages,
+            "live_metrics": result.live_report.metrics if result.live_report else None,
+            "alerts": len(self.alerts(run_id)) if config.persist and config.auto_pipeline else None,
+            # Ground truth, for demo scoring only: detection never sees it.
+            "ground_truth": {"malicious_agent_ids": result.run.labels.malicious_agent_ids},
+        }, run_id)
         return result
+
+    # ---------------------------------------------------------------- background runs (watch them live)
+    def start_run(self, config: ScenarioConfig) -> str:
+        """Start a run in the background and return its id at once; progress streams on /api/live."""
+        import threading
+
+        from app.modules.simulator.world import SCENARIOS_BY_ID
+        from app.services import quota
+
+        if config.scenario_id not in SCENARIOS_BY_ID:
+            raise ValueError(f"Unknown scenario: {config.scenario_id}")
+        quota.check_run(config)
+        run_id = f"run-{uuid.uuid4().hex[:8]}"
+        ACTIVE_RUNS[run_id] = {"run_id": run_id, "scenario_id": config.scenario_id, "started_at": now_iso()}
+
+        def work() -> None:
+            try:
+                self.simulate(config, run_id=run_id)
+            except Exception:  # already published as run_failed
+                pass
+            finally:
+                ACTIVE_RUNS.pop(run_id, None)
+
+        threading.Thread(target=work, name=f"swarmguard-{run_id}", daemon=True).start()
+        return run_id
 
     def collect(self, run_id: str | None, events: list[Any] | None = None, persist: bool = True) -> CollectionResult:
         run = self.get_run(run_id) if run_id else None
@@ -286,9 +340,20 @@ class Pipeline:
         if persist and run is not None:
             self._invalidate("collected", run_id)
             self._replace("normalized_events", run_id, [(e.event_id, _dump(e)) for e in result.events])
+            run.log_anchor = result.report.log_anchor
             self._mark(run, "collected", normalized_events=len(result.events), collector_errors=len(result.report.errors),
                        duplicates=result.report.duplicates, alerts=0, responses=0)
         return result
+
+    def integrity(self, run_id: str) -> dict[str, Any]:
+        """Re-check the stored log against its hash chain and the run's anchor (tamper evidence)."""
+        from app.modules.collector import integrity
+
+        run = self.get_run(run_id)
+        events = self.normalized_events(run_id)
+        if not events:
+            raise ValueError("no normalized events for this run; run the Event Collector first")
+        return {"run_id": run_id, **integrity.verify(events, run.log_anchor)}
 
     def detect(self, run_id: str, persist: bool = True) -> DetectionResult:
         run = self.get_run(run_id)
@@ -316,9 +381,20 @@ class Pipeline:
         policy = policy or self.policy()
         alerts = self.alerts(run_id)
         actions = respond(alerts, self.normalized_events(run_id), policy)
+        live = self.live_report(run_id)
+        if live and live.containment:  # what the live guard already did mid-run, as auditable responses
+            from app.modules.response.policy import respond_live
+
+            live_actions = respond_live(live.containment, alerts, policy)
+            for a in live_actions:
+                a.run_id = run_id
+            actions += live_actions
         if persist:
             self._replace("response_actions", run_id, [(a.response_id, _dump(a)) for a in actions])
-            status = {a.alert_id: alert_status_after(a) for a in actions}
+            status: dict[str, str] = {}
+            for a in actions:  # a live containment outranks a post-run "responded"
+                if a.alert_id and status.get(a.alert_id) != "contained":
+                    status[a.alert_id] = alert_status_after(a)
             for al in alerts:
                 al.status = status.get(al.alert_id, al.status)
             if alerts:

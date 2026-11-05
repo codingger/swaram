@@ -9,6 +9,7 @@ import { CollectorPage } from "./pages/CollectorPage";
 import { DetectionPage } from "./pages/DetectionPage";
 import { SimulatorPage } from "./pages/SimulatorPage";
 import { PipelinePage } from "./pages/PipelinePage";
+import { LivePage } from "./pages/LivePage";
 import { useAppState } from "./state";
 
 export function useHashRoute(): string {
@@ -66,6 +67,8 @@ export default function App() {
     content = <SwarmPage />;
   } else if (cleanRoute === "responses") {
     content = <ResponsesPage />;
+  } else if (cleanRoute === "live") {
+    content = <LivePage />;
   } else if (cleanRoute === "evaluation") {
     content = <EvaluationPage />;
   } else if (cleanRoute === "pipeline") {

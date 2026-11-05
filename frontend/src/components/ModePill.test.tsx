@@ -37,4 +37,10 @@ describe("ModePill", () => {
     expect(htmlSimAlert.toLowerCase()).not.toContain("blocked");
     expect(htmlSimAlert).toContain("Alert only");
   });
+
+  it("never calls a live containment without a denied action 'blocked'", () => {
+    const html = renderToStaticMarkup(<ModePill mode="enforced" decision="pause" outcome="contained" />);
+    expect(html).toContain("Paused live");
+    expect(html.toLowerCase()).not.toContain("blocked");
+  });
 });

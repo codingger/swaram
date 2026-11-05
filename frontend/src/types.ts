@@ -7,7 +7,7 @@ export type GatewayMode = "off" | "monitor" | "enforce";
 export type Severity = "low" | "medium" | "high" | "critical";
 export type ResponseDecision = "allow" | "alert" | "block" | "pause";
 export type ResponsePolicyMode = "simulate" | "enforce";
-export type ResponseOutcome = "allowed" | "alerted" | "would_block" | "would_pause" | "blocked";
+export type ResponseOutcome = "allowed" | "alerted" | "would_block" | "would_pause" | "blocked" | "contained";
 export type AlertStatus = "open" | "responded" | "contained";
 export type AgentCount = 3 | 5 | 10 | 20;
 
@@ -286,6 +286,24 @@ export interface BenchmarkResult {
   rows: BenchmarkRow[];
   cases: Record<string, Record<string, number | null>>;
   cases_info: Record<string, { threat: string; benign: boolean }>;
+}
+
+export interface ReviewItem {
+  review_id: string;
+  run_id: string;
+  kind: "paused_agent" | "held_egress" | "quarantined_input";
+  agent_id: string;
+  role: string | null;
+  trigger: string | null;
+  explanation: string | null;
+  resource: string | null;
+  claimed_sender: string | null;
+  risk: number | null;
+  status: "pending" | "released" | "confirmed";
+  created_at: string;
+  decided_at: string | null;
+  note: string | null;
+  effect: string | null;
 }
 
 export interface GeminiQuotaStatus {
