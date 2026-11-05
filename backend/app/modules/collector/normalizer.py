@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.modules.collector import integrity, privacy
 from app.schemas import Agent, CollectionReport, CollectionResult, CollectorIssue, NormalizedEvent, RawEvent
 from app.timeutil import iso, now_iso, parse_iso
 
@@ -105,6 +106,10 @@ def collect(raw_events: list[Any], *, run_id: str | None = None, agents: list[Ag
     duplicates = 0
     normalized: list[NormalizedEvent] = []
     stamp = now_iso()
+    redact = privacy.enabled()
+    redactions = 0
+    ai = {"model_decisions": 0, "fallbacks": 0, "refusals": 0, "exposed_to_untrusted": 0}
+    traced: set[tuple] = set()
 
     for idx, raw in enumerate(raw_events):
         if not isinstance(raw, dict):
@@ -167,11 +172,24 @@ def collect(raw_events: list[Any], *, run_id: str | None = None, agents: list[Ag
             issues.append("agent_run_mismatch")
             warnings.append(CollectorIssue(index=idx, event_id=ev.event_id, code="agent_run_mismatch", message=f"{ev.agent_id} belongs to {agent.run_id}"))
         gateway = ev.gateway_decision if ev.gateway_decision in GATEWAY_DECISIONS else "not_checked"
+        payload, stored_raw = ev.payload, raw
+        if redact:
+            payload, n = privacy.redact(ev.payload)
+            if n:
+                redactions += n
+                key = "details" if "details" in raw and "payload" not in raw else "payload"
+                stored_raw = {**raw, key: privacy.redact(raw.get(key) or {})[0]}
+        trace = payload.get("ai_trace") if isinstance(payload.get("ai_trace"), dict) else None
+        if trace and (ev.agent_id, trace.get("round")) not in traced:  # one decision per agent turn
+            traced.add((ev.agent_id, trace.get("round")))
+            ai["model_decisions" if trace.get("source") == "model" else "fallbacks"] += 1
+            ai["refusals"] += bool(trace.get("refused"))
+            ai["exposed_to_untrusted"] += bool(trace.get("exposed_to_untrusted"))
 
         fields = {
             "run_id": ev.run_id, "event_id": ev.event_id, "agent_id": ev.agent_id,
             "event_type": event_type, "action": action, "status": status,
-            "target": ev.target, "resource": ev.resource, "payload": ev.payload,
+            "target": ev.target, "resource": ev.resource, "payload": payload,
         }
         normalized.append(NormalizedEvent(
             **fields,
@@ -182,11 +200,12 @@ def collect(raw_events: list[Any], *, run_id: str | None = None, agents: list[Ag
             summary=summarize(fields, agent.role if agent else None),
             issues=issues,
             raw_hash=h,
-            raw=raw,
+            raw=stored_raw,
             normalized_at=stamp,
         ))
 
     normalized.sort(key=lambda e: (e.timestamp, e.sequence, e.event_id))
+    anchor = integrity.chain(normalized) if normalized else None
     report = CollectionReport(
         run_id=run_id or (normalized[0].run_id if normalized else None),
         total_input=len(raw_events),
@@ -195,5 +214,8 @@ def collect(raw_events: list[Any], *, run_id: str | None = None, agents: list[Ag
         duplicates=duplicates,
         warnings=warnings,
         errors=errors,
+        redactions=redactions,
+        ai=ai if traced else {},
+        log_anchor=anchor,
     )
     return CollectionResult(report=report, events=normalized)

@@ -4,6 +4,7 @@ import { dateTime } from "./lib/format";
 import { CollectorPage } from "./pages/CollectorPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DetectionPage } from "./pages/DetectionPage";
+import { LivePage } from "./pages/LivePage";
 import { ResponsePage } from "./pages/ResponsePage";
 import { SimulatorPage } from "./pages/SimulatorPage";
 import { useAppState } from "./state";
@@ -14,6 +15,7 @@ const PAGES = [
   { id: "detection", label: "Threat Detection", Component: DetectionPage },
   { id: "response", label: "Security Response", Component: ResponsePage },
   { id: "dashboard", label: "Dashboard & Evaluation", Component: DashboardPage },
+  { id: "live", label: "Live monitor", Component: LivePage },
 ] as const;
 
 function useHashRoute(): string {

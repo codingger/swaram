@@ -288,6 +288,24 @@ export interface BenchmarkResult {
   cases_info: Record<string, { threat: string; benign: boolean }>;
 }
 
+export interface ReviewItem {
+  review_id: string;
+  run_id: string;
+  kind: "paused_agent" | "held_egress" | "quarantined_input";
+  agent_id: string;
+  role: string | null;
+  trigger: string | null;
+  explanation: string | null;
+  resource: string | null;
+  claimed_sender: string | null;
+  risk: number | null;
+  status: "pending" | "released" | "confirmed";
+  created_at: string;
+  decided_at: string | null;
+  note: string | null;
+  effect: string | null;
+}
+
 export interface GeminiQuotaStatus {
   configured: boolean;
   model: string;
