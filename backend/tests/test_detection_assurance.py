@@ -198,7 +198,7 @@ def test_phase3_explanations(steps, hyp, trained):
 
 
 def test_phase3_registered():
-    assert PHASE3 == {"SG-021", "SG-022", "SG-023", "SG-024"} and PHASE3 <= {r.rule_id for r in DEFAULT_RULES}
+    assert PHASE3 == {"SG-021", "SG-022", "SG-023", "SG-024", "SG-026"} and PHASE3 <= {r.rule_id for r in DEFAULT_RULES}
 
 
 @pytest.mark.parametrize("scenario", ["normal_collaboration", "unauthorized_access", "coordinated_leakage"])
