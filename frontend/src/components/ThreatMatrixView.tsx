@@ -71,7 +71,7 @@ export function ThreatMatrixView({
                   </span>
                 </div>
                 <div className="mt-2 text-[14px] font-semibold text-[var(--text)]">{cat.label}</div>
-                <div className="mt-0.5 line-clamp-1 text-[12px] text-[var(--text-3)]">{cat.description}</div>
+                <div className="mt-0.5 line-clamp-1 text-[14px] text-[var(--text-3)]">{cat.description}</div>
               </button>
             );
           })}
@@ -86,8 +86,8 @@ export function ThreatMatrixView({
         {/* Perspective Switcher */}
         {mode === "all" && (
           <div className="flex items-center justify-between border-y border-[var(--hairline-subtle)] py-2">
-            <span className="text-[13px] font-medium text-[var(--text-3)]">Operational Perspective:</span>
-            <div className="inline-flex rounded-lg bg-[var(--card-alt)] p-0.5 text-[13px] border border-[var(--hairline-subtle)]">
+            <span className="text-[14px] font-medium text-[var(--text-3)]">Operational Perspective:</span>
+            <div className="inline-flex rounded-lg bg-[var(--card-alt)] p-0.5 text-[14px] border border-[var(--hairline-subtle)]">
               <button
                 onClick={() => setActiveTab("simulator")}
                 className={`rounded-md px-3 py-1.5 font-medium transition-all ${
@@ -130,7 +130,7 @@ export function ThreatMatrixView({
               <button
                 key={r.id}
                 onClick={() => setSelectedRuleId(r.id)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-left text-[13px] transition-all border ${
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-left text-[14px] transition-all border ${
                   isSelected
                     ? "bg-[var(--accent)] font-semibold text-white shadow-xs border-[var(--accent)]"
                     : "bg-[var(--card-alt)] text-[var(--text)] hover:bg-[var(--card)] border-[var(--hairline-subtle)]"
@@ -185,7 +185,7 @@ export function ThreatMatrixView({
                 </div>
 
                 <div>
-                  <div className="text-[12px] font-semibold text-[var(--text-2)]">Attack Behavior Pattern:</div>
+                  <div className="text-[14px] font-semibold text-[var(--text-2)]">Attack Behavior Pattern:</div>
                   <div className="mt-1 rounded-md bg-[var(--med-bg)] border border-[var(--med)]/20 px-3 py-2 text-[13px] font-medium text-[var(--med)]">
                     {activeRule.simulatorTelemetry.attackPattern}
                   </div>
@@ -193,7 +193,7 @@ export function ThreatMatrixView({
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
-                    <div className="text-[12px] font-semibold text-[var(--text-2)]">Required Event Fields:</div>
+                    <div className="text-[14px] font-semibold text-[var(--text-2)]">Required Event Fields:</div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       {activeRule.simulatorTelemetry.requiredFields.map((f) => (
                         <span key={f} className="rounded bg-[var(--card-alt)] px-2 py-0.5 font-mono text-[12px] text-[var(--text)] border border-[var(--hairline-subtle)]">
@@ -204,7 +204,7 @@ export function ThreatMatrixView({
                   </div>
 
                   <div>
-                    <div className="text-[12px] font-semibold text-[var(--text-2)]">Sample Agent Payload:</div>
+                    <div className="text-[14px] font-semibold text-[var(--text-2)]">Sample Agent Payload:</div>
                     <pre className="mt-1 overflow-x-auto rounded bg-[var(--card-alt)] p-2 font-mono text-[12px] text-[var(--text)] border border-[var(--hairline-subtle)]">
                       {JSON.stringify(activeRule.simulatorTelemetry.samplePayload ?? {}, null, 2)}
                     </pre>
@@ -226,14 +226,14 @@ export function ThreatMatrixView({
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-md bg-[var(--accent)]/5 p-3 border border-[var(--accent)]/15">
-                    <div className="text-[12px] font-bold text-[var(--accent)]">1. Intake Validation Check</div>
+                    <div className="text-[14px] font-bold text-[var(--accent)]">1. Intake Validation Check</div>
                     <div className="mt-1 text-[13px] text-[var(--text-2)]">
                       {activeRule.collectorOptimization.validationCheck}
                     </div>
                   </div>
 
                   <div className="rounded-md bg-[var(--ok-bg)] p-3 border border-[var(--ok)]/20">
-                    <div className="text-[12px] font-bold text-[var(--ok)]">2. Normalization & Storage Optimization</div>
+                    <div className="text-[14px] font-bold text-[var(--ok)]">2. Normalization & Storage Optimization</div>
                     <div className="mt-1 text-[13px] text-[var(--text-2)]">
                       {activeRule.collectorOptimization.normalizationStep}
                     </div>
@@ -259,16 +259,16 @@ export function ThreatMatrixView({
 
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-md bg-[var(--card-alt)] p-3 border border-[var(--hairline-subtle)]">
-                    <div className="text-[12px] font-semibold text-[var(--text-2)]">Detection Method</div>
-                    <div className="mt-1 text-[13px] font-medium text-[var(--text)]">{activeRule.detectionLayer}</div>
+                    <div className="text-[14px] font-semibold text-[var(--text-2)]">Detection Method</div>
+                    <div className="mt-1 text-[14px] font-medium text-[var(--text)]">{activeRule.detectionLayer}</div>
                   </div>
                   <div className="rounded-md bg-[var(--card-alt)] p-3 border border-[var(--hairline-subtle)]">
-                    <div className="text-[12px] font-semibold text-[var(--text-2)]">Evidence Requirement</div>
-                    <div className="mt-1 text-[13px] font-medium text-[var(--text)]">Strict event_id correlation</div>
+                    <div className="text-[14px] font-semibold text-[var(--text-2)]">Evidence Requirement</div>
+                    <div className="mt-1 text-[14px] font-medium text-[var(--text)]">Strict event_id correlation</div>
                   </div>
                   <div className="rounded-md bg-[var(--card-alt)] p-3 border border-[var(--hairline-subtle)]">
-                    <div className="text-[12px] font-semibold text-[var(--text-2)]">False Alarm Target</div>
-                    <div className="mt-1 text-[13px] font-bold text-[var(--ok)]">0% on benign baseline</div>
+                    <div className="text-[14px] font-semibold text-[var(--text-2)]">False Alarm Target</div>
+                    <div className="mt-1 text-[14px] font-bold text-[var(--ok)]">0% on benign baseline</div>
                   </div>
                 </div>
               </div>

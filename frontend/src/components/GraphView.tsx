@@ -3,11 +3,11 @@ import type { AgentGraph } from "../types";
 import { Empty } from "./ui";
 
 const ROLE_COLOR: Record<string, string> = {
-  planner: "#5e5ce6",
-  analyst: "#0071e3",
-  coder: "#30b158",
-  researcher: "#ff9500",
-  reviewer: "#af52de",
+  planner: "var(--accent)",
+  analyst: "var(--ok)",
+  coder: "var(--med)",
+  researcher: "var(--high)",
+  reviewer: "var(--text-2)",
 };
 
 export interface GraphViewProps {
@@ -281,7 +281,7 @@ export function GraphView({
                   textAnchor="middle"
                   fontSize={ext ? "11" : "16"}
                   fontWeight="600"
-                  fill={ext ? (isSuspiciousExternal ? "var(--crit)" : "var(--text-2)") : "#ffffff"}
+                  fill={ext ? (isSuspiciousExternal ? "var(--crit)" : "var(--text-2)") : "var(--bg)"}
                   className="pointer-events-none select-none tracking-tight"
                 >
                   {roleInitial}

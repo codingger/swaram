@@ -5,8 +5,8 @@ import { shortId, time } from "../lib/format";
 
 const TYPE_COLOR: Record<string, string> = {
   message: "var(--hairline)",
-  task: "#aeaeb2",
-  tool_call: "#5e5ce6",
+  task: "var(--text-3)",
+  tool_call: "var(--accent)",
   resource_access: "var(--accent)",
   data_transfer: "var(--crit)",
 };
@@ -149,7 +149,7 @@ export function Timeline({ items, onSelect, selectedEventId }: TimelineProps) {
                   cy={cy}
                   r={it.flagged ? 5.5 : 4.5}
                   fill={it.flagged ? "var(--crit)" : TYPE_COLOR[it.event_type] ?? "var(--text-3)"}
-                  stroke={it.status === "denied" ? "var(--text)" : "#ffffff"}
+                  stroke={it.status === "denied" ? "var(--text)" : "var(--bg)"}
                   strokeWidth={1.5}
                   className="drop-shadow-xs"
                 />

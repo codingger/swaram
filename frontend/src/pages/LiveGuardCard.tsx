@@ -30,10 +30,10 @@ function ReplayVerdict({ replayed, report }: { replayed: ReplayCase; report: Liv
       ];
   return (
     <div className="flex flex-wrap gap-2">
-      <span className="rounded-full card-subtle px-3 py-1 text-[13px] text-[var(--text-2)]">{replayed.threat} · {replayed.name}</span>
+      <span className="rounded-full card-subtle px-3 py-1 text-[14px] text-[var(--text-2)]">{replayed.threat} · {replayed.name}</span>
       {rows.map((r) => (
-        <span key={r.text} className={`rounded-full px-3 py-1 text-[13px] font-medium ${r.ok ? "bg-[var(--ok-bg)] text-[var(--ok)] border border-[var(--ok)]/30" : "bg-[var(--crit-bg)] text-[var(--crit)] border border-[var(--crit)]/30"}`}>
-          {r.ok ? "✓" : "✗"} {r.text}
+        <span key={r.text} className={`rounded-full px-3 py-1 text-[14px] font-medium ${r.ok ? "bg-[var(--ok-bg)] text-[var(--ok)] border border-[var(--ok)]/30" : "bg-[var(--crit-bg)] text-[var(--crit)] border border-[var(--crit)]/30"}`}>
+          <span className="font-semibold">{r.ok ? "[PASS]" : "[ALERT]"}</span> <span>{r.text}</span>
         </span>
       ))}
     </div>

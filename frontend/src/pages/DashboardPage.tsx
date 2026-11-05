@@ -127,30 +127,30 @@ export function DashboardPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[16px] font-bold text-ink">SwaramGuard 20-Rule Detection Verification</span>
+                  <span className="text-[16px] font-bold text-[var(--text)]">SwaramGuard 20-Rule Detection Verification</span>
                   <span className="rounded-full bg-emerald-700 px-2.5 py-0.5 text-[11px] font-bold text-white">
                     VERIFIED RESILIENT
                   </span>
                 </div>
-                <p className="mt-1 text-[13px] text-muted">
+                <p className="mt-1 text-[13px] text-[var(--text-2)]">
                   Tested across 20 distinct threat vectors covering Data Access, Intent Anomalies, Scheming, and Multi-Agent Failures.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <div className="rounded-xl bg-white/80 px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
+                <div className="rounded-xl card-subtle px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
                   <div className="text-[11px] font-semibold text-faint">Tests Passing</div>
                   <div className="text-[16px] font-bold text-emerald-700">PASSED: {BENCHMARK_PROOF.testsPassing}</div>
                 </div>
-                <div className="rounded-xl bg-white/80 px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
+                <div className="rounded-xl card-subtle px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
                   <div className="text-[11px] font-semibold text-faint">Normal Runs Tested</div>
-                  <div className="text-[16px] font-bold text-ink">{BENCHMARK_PROOF.normalRunsTested}</div>
+                  <div className="text-[16px] font-bold text-[var(--text)]">{BENCHMARK_PROOF.normalRunsTested}</div>
                 </div>
-                <div className="rounded-xl bg-white/80 px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
+                <div className="rounded-xl card-subtle px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
                   <div className="text-[11px] font-semibold text-faint">False Alarms</div>
                   <div className="text-[16px] font-bold text-emerald-600">0.0%</div>
                 </div>
-                <div className="rounded-xl bg-white/80 px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
+                <div className="rounded-xl card-subtle px-3.5 py-2 text-center shadow-xs backdrop-blur-xs">
                   <div className="text-[11px] font-semibold text-faint">Precision</div>
                   <div className="text-[16px] font-bold text-blue-600">100%</div>
                 </div>
@@ -159,15 +159,15 @@ export function DashboardPage() {
 
             {/* Missing Log Drop Rate Stress Test Pill Matrix */}
             <div className="mt-4 border-t border-black/[0.06] pt-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-2)]">
                 Missing-Log Resilience (Attacker Deletes Logs / Log Gaps)
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {BENCHMARK_PROOF.resilienceTrials.map((trial) => (
                   <div key={trial.dropRate} className="rounded-lg bg-white/90 p-2.5 shadow-xs">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-[11px] font-bold text-ink">{trial.dropRate} dropped</span>
-                      <span className="text-[10px] font-semibold text-muted">{trial.status}</span>
+                      <span className="font-mono text-[11px] font-bold text-[var(--text)]">{trial.dropRate} dropped</span>
+                      <span className="text-[10px] font-semibold text-[var(--text-2)]">{trial.status}</span>
                     </div>
                     <div className="mt-1 text-[13px] font-bold text-accent">
                       {trial.caught} caught
