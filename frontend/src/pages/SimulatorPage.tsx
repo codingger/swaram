@@ -264,7 +264,6 @@ export function SimulatorPage() {
               <option value="off">off</option>
             </select>
           </Field>
-
           <Field
             label={`Drop rate: ${Math.round(cfg.drop_rate * 100)}%`}
             hint="Randomly drop events to evaluate robustness against log tampering."
@@ -278,6 +277,15 @@ export function SimulatorPage() {
               onChange={(e) => set("drop_rate", Number(e.target.value))}
               className="w-full"
             />
+            <label className="mt-2 flex items-center gap-2 text-[14px] text-[var(--text)] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!cfg.sensors}
+                onChange={(e) => set("sensors", e.target.checked)}
+                className="accent-[var(--accent)]"
+              />
+              Independent sensors (egress proxy, broker log, resource audit), lost separately
+            </label>
           </Field>
 
           <Field
