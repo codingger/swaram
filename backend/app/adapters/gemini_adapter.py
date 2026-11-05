@@ -16,7 +16,11 @@ Spending and rate limits:
 from __future__ import annotations
 
 
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import logging
+import threading
+import json
 
 import os
 import re
@@ -39,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 
-DEFAULT_DAILY_BUDGET = 100
+DEFAULT_DAILY_BUDGET = 480  # just under Google's free-tier 500/day, so a quota error is rare
 
 DEFAULT_RPM_LIMIT = 14  # free tier: 15/min for Flash-Lite (5/min for 2.5 Flash); stay just under
 
@@ -71,89 +75,137 @@ def retry_after_seconds(message: str) -> float | None:
     return h * 3600 + mins * 60 + secs
 
 
+# Google's free tier for gemini-3.5-flash-lite (measured Nov 2026). Daily quotas reset at midnight US Pacific time.
+GOOGLE_FREE_TIER = {"rpm": 15, "daily": 500}
+QUOTA_FILE = Path(__file__).resolve().parents[2] / "data" / "gemini_quota.json"
+
+
+def _pacific_offset_hours(t: datetime) -> int:
+    """UTC offset of US Pacific time (DST from the 2nd Sunday of March to the 1st Sunday of November, 2 a.m. local)."""
+    def nth_sunday(year: int, month: int, n: int) -> datetime:
+        first = datetime(year, month, 1, tzinfo=timezone.utc)
+        return first + timedelta(days=(6 - first.weekday()) % 7 + 7 * (n - 1))
+
+    dst_start = nth_sunday(t.year, 3, 2) + timedelta(hours=10)  # 2 a.m. PST = 10:00 UTC
+    dst_end = nth_sunday(t.year, 11, 1) + timedelta(hours=9)  # 2 a.m. PDT = 09:00 UTC
+    return -7 if dst_start <= t < dst_end else -8
+
+
+def quota_day(now: float) -> str:
+    """The Google quota day (US Pacific calendar date) a moment belongs to."""
+    t = datetime.fromtimestamp(now, tz=timezone.utc)
+    return (t + timedelta(hours=_pacific_offset_hours(t))).date().isoformat()
+
+
+def next_reset(now: float) -> float:
+    """Epoch seconds of the next midnight US Pacific, when Google resets daily quotas."""
+    t = datetime.fromtimestamp(now, tz=timezone.utc)
+    local = t + timedelta(hours=_pacific_offset_hours(t))
+    midnight_local = datetime(local.year, local.month, local.day, tzinfo=timezone.utc) + timedelta(days=1)
+    guess = midnight_local - timedelta(hours=_pacific_offset_hours(t))
+    return (midnight_local - timedelta(hours=_pacific_offset_hours(guess))).timestamp()
+
+
+def humanize_seconds(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    h, m = seconds // 3600, (seconds % 3600) // 60
+    return f"{h}h {m}m" if h else f"{m}m {seconds % 60}s" if m else f"{seconds}s"
+
+
 class GeminiQuotaTracker:
+    """Daily and per-minute Gemini quota, shared by every adapter in the process and persisted across restarts.
 
-    """Thread-safe sliding window and daily quota tracking for Gemini API requests."""
+    The daily count follows Google's quota day (resets at midnight US Pacific) and is saved to a small JSON file, so
+    the app and the scripts see the same usage. When Google itself reports the daily quota spent (HTTP 429 "per
+    day"), calls stop until the reset instead of being retried every minute.
+    """
 
-
-    def __init__(
-
-        self,
-
-        daily_budget: int = DEFAULT_DAILY_BUDGET,
-
-        rpm_limit: int = DEFAULT_RPM_LIMIT,
-
-    ) -> None:
-
+    def __init__(self, daily_budget: int = DEFAULT_DAILY_BUDGET, rpm_limit: int = DEFAULT_RPM_LIMIT,
+                 state_file: str | Path | None = None) -> None:
         self.daily_budget = int(os.getenv("GEMINI_DAILY_BUDGET", daily_budget))
-
         self.rpm_limit = int(os.getenv("GEMINI_MAX_RPM", rpm_limit))
-
+        self._state_file = state_file
+        self._lock = threading.Lock()
+        self.day = quota_day(time.time())
         self.daily_calls_used = 0
-
-        self.day_start = time.time()
-
         self.call_timestamps: list[float] = []
+        self.cooldown_until: float = 0.0  # short pause after a per-minute 429
+        self.exhausted_until: float = 0.0  # Google reported the daily quota spent
+        self._load()
 
-        self.cooldown_until: float = 0.0
+    # ---------------------------------------------------------------- persistence (shared by app and scripts)
+    def _path(self) -> Path | None:
+        raw = self._state_file if self._state_file is not None else os.getenv("GEMINI_QUOTA_FILE", str(QUOTA_FILE))
+        return None if str(raw).lower() in ("", "off") else Path(raw)
 
+    def _load(self) -> None:
+        path = self._path()
+        if not path or not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if data.get("day") == self.day:
+            self.daily_calls_used = max(self.daily_calls_used, int(data.get("calls", 0)))
+            self.exhausted_until = max(self.exhausted_until, float(data.get("exhausted_until", 0.0)))
+
+    def _save(self) -> None:
+        path = self._path()
+        if not path:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"day": self.day, "calls": self.daily_calls_used,
+                                        "exhausted_until": self.exhausted_until}), encoding="utf-8")
+        except OSError:
+            logger.debug("could not persist Gemini quota usage to %s", path)
 
     def _refresh_window(self) -> None:
-
         now = time.time()
-
-        # Reset 24-hour daily budget window
-
-        if now - self.day_start >= 86400:
-
-            self.daily_calls_used = 0
-
-            self.day_start = now
-
-        # Prune calls older than 60 seconds
-
+        day = quota_day(now)
+        if day != self.day:  # Google's quota day rolled over
+            self.day, self.daily_calls_used, self.exhausted_until = day, 0, 0.0
+        self._load()  # pick up calls made by other processes (scripts, the server)
         cutoff = now - 60.0
-
         self.call_timestamps = [t for t in self.call_timestamps if t > cutoff]
 
-
+    # ---------------------------------------------------------------- checks
     def can_call(self) -> tuple[bool, str | None]:
-
         """Check whether an API call is permitted within daily and RPM quotas."""
+        with self._lock:
+            now = time.time()
+            self._refresh_window()
+            if now < self.exhausted_until:
+                return False, (f"Google's daily Gemini quota is used up; it resets in "
+                               f"{humanize_seconds(self.exhausted_until - now)}")
+            if now < self.cooldown_until:
+                return False, f"in cooldown after HTTP 429 until {self.cooldown_until:.1f}"
+            if self.daily_calls_used >= self.daily_budget:
+                return False, (f"daily quota exhausted ({self.daily_calls_used}/{self.daily_budget} calls used); "
+                               f"resets in {humanize_seconds(next_reset(now) - now)}")
+            if len(self.call_timestamps) >= self.rpm_limit:
+                return False, f"RPM limit exceeded ({len(self.call_timestamps)}/{self.rpm_limit} calls in 60s)"
+            return True, None
 
-        now = time.time()
-
-        if now < self.cooldown_until:
-
-            return False, f"in cooldown after HTTP 429 until {self.cooldown_until:.1f}"
-
-
-        self._refresh_window()
-
-        if self.daily_calls_used >= self.daily_budget:
-
-            return False, f"daily quota exhausted ({self.daily_calls_used}/{self.daily_budget} calls used)"
-
-
-        if len(self.call_timestamps) >= self.rpm_limit:
-
-            return False, f"RPM limit exceeded ({len(self.call_timestamps)}/{self.rpm_limit} calls in 60s)"
-
-
-        return True, None
-
+    def remaining(self) -> int:
+        with self._lock:
+            self._refresh_window()
+            if time.time() < self.exhausted_until:
+                return 0
+            return max(0, self.daily_budget - self.daily_calls_used)
 
     def seconds_until_slot(self) -> float | None:
-        """Seconds until the rate limits allow a call (0 = now). None if the daily budget is spent."""
-        now = time.time()
-        self._refresh_window()
-        if self.daily_calls_used >= self.daily_budget:
-            return None
-        wait = max(0.0, self.cooldown_until - now)
-        if len(self.call_timestamps) >= self.rpm_limit:
-            wait = max(wait, self.call_timestamps[-self.rpm_limit] + 60.0 - now)
-        return wait
+        """Seconds until the rate limits allow a call (0 = now). None if the daily quota is spent."""
+        with self._lock:
+            now = time.time()
+            self._refresh_window()
+            if self.daily_calls_used >= self.daily_budget or now < self.exhausted_until:
+                return None
+            wait = max(0.0, self.cooldown_until - now)
+            if len(self.call_timestamps) >= self.rpm_limit:
+                wait = max(wait, self.call_timestamps[-self.rpm_limit] + 60.0 - now)
+            return wait
 
     def wait_for_slot(self, max_wait: float) -> None:
         """Pace calls to the per-minute limit instead of falling back to scripted text mid-run."""
@@ -162,61 +214,71 @@ class GeminiQuotaTracker:
             logger.info("Gemini rate limit: waiting %.1fs for the next free slot", wait)
             time.sleep(wait + 0.05)
 
+    # ---------------------------------------------------------------- recording
     def record_call(self) -> None:
+        """Record a successful API invocation."""
+        with self._lock:
+            now = time.time()
+            self._refresh_window()
+            self.daily_calls_used += 1
+            self.call_timestamps.append(now)
+            self._save()
 
-        """Record a successful API invocation timestamp."""
-
-        now = time.time()
-
-        self._refresh_window()
-
-        self.daily_calls_used += 1
-
-        self.call_timestamps.append(now)
-
-
-    def record_429(self, cooldown_seconds: float = 60.0) -> None:
-
-        """Record an HTTP 429 rate limit hit, enforcing temporary cooldown."""
-
-        self.cooldown_until = time.time() + cooldown_seconds
-
+    def record_429(self, cooldown_seconds: float = 60.0, *, daily: bool = False) -> None:
+        """Record an HTTP 429. A daily-quota 429 (or a retry hint longer than 10 minutes) blocks until the reset."""
+        with self._lock:
+            now = time.time()
+            if daily or cooldown_seconds > 600:
+                self.exhausted_until = now + cooldown_seconds if cooldown_seconds > 600 else next_reset(now)
+                self._save()
+            else:
+                self.cooldown_until = now + cooldown_seconds
 
     def reset(self) -> None:
-
         """Reset quota counters (used in testing)."""
-
-        self.daily_calls_used = 0
-
-        self.day_start = time.time()
-
-        self.call_timestamps.clear()
-
-        self.cooldown_until = 0.0
-
+        with self._lock:
+            self.day = quota_day(time.time())
+            self.daily_calls_used = 0
+            self.call_timestamps.clear()
+            self.cooldown_until = 0.0
+            self.exhausted_until = 0.0
+            self._save()
 
     def status(self) -> dict[str, Any]:
+        with self._lock:
+            now = time.time()
+            self._refresh_window()
+            exhausted = now < self.exhausted_until
+            resets_at = self.exhausted_until if exhausted else next_reset(now)
+            remaining = 0 if exhausted else max(0, self.daily_budget - self.daily_calls_used)
+            if exhausted:
+                reason = f"Google's daily quota is used up; resets in {humanize_seconds(resets_at - now)}"
+            elif remaining == 0:
+                reason = f"Daily budget of {self.daily_budget} calls used; resets in {humanize_seconds(resets_at - now)}"
+            elif now < self.cooldown_until:
+                reason = f"Per-minute limit hit; free again in {humanize_seconds(self.cooldown_until - now)}"
+            else:
+                reason = None
+            return {
+                "day": self.day,
+                "calls_today": self.daily_calls_used,
+                "daily_limit": self.daily_budget,
+                "remaining_today": remaining,
+                "rpm_limit": self.rpm_limit,
+                "calls_last_minute": len(self.call_timestamps),
+                "resets_at": datetime.fromtimestamp(resets_at, tz=timezone.utc).isoformat(timespec="seconds"),
+                "resets_in_s": int(max(0, resets_at - now)),
+                "exhausted": exhausted or remaining == 0,
+                "blocked_reason": reason,
+                "google_free_tier": GOOGLE_FREE_TIER,
+                # kept for older callers
+                "daily_budget": self.daily_budget,
+                "daily_calls_used": self.daily_calls_used,
+                "daily_calls_remaining": remaining,
+                "current_rpm": len(self.call_timestamps),
+                "in_cooldown": now < self.cooldown_until or exhausted,
+            }
 
-        self._refresh_window()
-
-        return {
-
-            "daily_budget": self.daily_budget,
-
-            "daily_calls_used": self.daily_calls_used,
-
-            "daily_calls_remaining": max(0, self.daily_budget - self.daily_calls_used),
-
-            "rpm_limit": self.rpm_limit,
-
-            "current_rpm": len(self.call_timestamps),
-
-            "in_cooldown": time.time() < self.cooldown_until,
-
-        }
-
-
-# Global shared quota tracker across runs
 
 GLOBAL_QUOTA_TRACKER = GeminiQuotaTracker()
 
@@ -523,7 +585,7 @@ class GeminiAdapter:
                     logger.warning("Gemini HTTP 429 (Rate Limit / Quota Exceeded); triggering quota tracker cooldown: %s", err_msg)
                     _wait = retry_after_seconds(str(err_msg))
 
-                    self.quota_tracker.record_429(_wait or 60.0)
+                    self.quota_tracker.record_429(_wait or 60.0, daily="per day" in str(err_msg).lower())
 
                 else:
 
@@ -564,7 +626,7 @@ class GeminiAdapter:
                     logger.warning("Gemini HTTP 429 rate limit detected; cooling down")
                     _wait = retry_after_seconds(err_str)
 
-                    self.quota_tracker.record_429(_wait or 60.0)
+                    self.quota_tracker.record_429(_wait or 60.0, daily="per day" in err_str.lower())
 
                 else:
 

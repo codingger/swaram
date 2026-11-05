@@ -150,6 +150,10 @@ class Pipeline:
         """
         from app.adapters import get_adapter
 
+        if req.agent_backend == "gemini":
+            from app.services import quota
+
+            quota.require(req.runs * quota.estimate_calls(5, "autonomous"), f"teaching {req.runs} AI run(s)")
         taught = []
         for i in range(req.runs):
             adapter = get_adapter(req.agent_backend)  # fresh per run: each adapter has a per-run call cap
@@ -252,8 +256,14 @@ class Pipeline:
 
     # ---------------------------------------------------------------- stages
     def simulate(self, config: ScenarioConfig) -> SimulationResult:
+        from app.services import quota
+
+        quota.check_run(config)  # refuse up front rather than fall back to scripted text mid-run
+        before = quota.quota_status()["calls_today"] if config.agent_backend == "gemini" else None
         live = LiveGuard(self.rules(), config.live_guard, config.pause_at) if config.live_guard != "off" else None
         result = run_simulation(config, live=live)
+        if before is not None:
+            result.run.counts["model_calls"] = max(0, quota.quota_status()["calls_today"] - before)
         if live:
             result.live_report = live.report(result.run)
         if config.persist:

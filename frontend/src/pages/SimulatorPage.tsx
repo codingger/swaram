@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import { GeminiQuota } from "../components/GeminiQuota";
 import { ResultViewer, type Column } from "../components/ResultViewer";
 import { Badge, Button, Card, Field, OutputSelect, PageHeader, RunSelect, Segmented, StatusBanner, inputCls, type Status } from "../components/ui";
 import { shortId, time } from "../lib/format";
@@ -32,6 +33,8 @@ export function SimulatorPage() {
     drop_rate: 0, agent_backend: "deterministic", agent_mode: "scripted", auto_pipeline: false, persist: true,
   });
   const [busy, setBusy] = useState(false);
+  const [runs, setRuns] = useState(0);
+  const [quotaOk, setQuotaOk] = useState(true);
   const [status, setStatus] = useState<Status>(null);
   const [preview, setPreview] = useState<RawEvent[] | null>(null);
   const stored = useRunData(api.rawEvents, selectedRunId);
@@ -66,6 +69,7 @@ export function SimulatorPage() {
       setStatus({ kind: "error", message: (e as Error).message });
     } finally {
       setBusy(false);
+      setRuns((n) => n + 1);
     }
   }
 
@@ -116,6 +120,9 @@ export function SimulatorPage() {
                 <option key={b.id} value={b.id} disabled={!b.available}>{b.label}{b.available ? "" : " (no API key)"}</option>
               ))}
             </select>
+            {cfg.agent_backend === "gemini" && (
+              <div className="mt-3"><GeminiQuota agentCount={cfg.agent_count} agentMode={cfg.agent_mode ?? "scripted"} refreshKey={runs} onChange={setQuotaOk} /></div>
+            )}
           </Field>
           <OutputSelect value={cfg.persist} onChange={(v) => set("persist", v)} collection="raw_events" />
           <label className="flex items-center gap-2.5 self-end pb-2.5 text-[14px] text-ink">
@@ -124,7 +131,8 @@ export function SimulatorPage() {
           </label>
         </div>
         <div className="mt-6 flex justify-end">
-          <Button onClick={run} busy={busy}>Run simulation</Button>
+          <Button onClick={run} busy={busy} disabled={cfg.agent_backend === "gemini" && !quotaOk}
+            title={cfg.agent_backend === "gemini" && !quotaOk ? "Not enough Gemini quota for this run" : undefined}>Run simulation</Button>
         </div>
       </Card>
 
