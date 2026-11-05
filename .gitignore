@@ -10,4 +10,4 @@ frontend/dist/
 *.tsbuildinfo
 runs/
 datasets/
-app/
+/app/
