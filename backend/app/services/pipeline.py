@@ -150,9 +150,9 @@ class Pipeline:
         """
         from app.adapters import get_adapter
 
-        adapter = get_adapter(req.agent_backend)
         taught = []
         for i in range(req.runs):
+            adapter = get_adapter(req.agent_backend)  # fresh per run: each adapter has a per-run call cap
             sim = run_simulation(ScenarioConfig(scenario_id="normal_collaboration", agent_count=5, seed=5000 + i,
                                                 agent_mode="autonomous", agent_backend=req.agent_backend, persist=False),
                                  adapter=adapter)
