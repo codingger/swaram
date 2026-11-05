@@ -256,7 +256,7 @@ def worker_turn(r: AgentRunner, agent: Agent, planner: Agent, agents: list[Agent
     context = []
     for c in [p for p in pending if p.agent_id == agent.agent_id]:
         pending.remove(c)
-        payload = {"untrusted": True, **{k: v for k, v in c.meta.items() if k != "marker"}}
+        payload = {"untrusted": True, **{k: v for k, v in c.meta.items() if k != "marker"}, "content": c.text[:4000]}
         if c.event_type == "tool_call":
             delivered = r.emit(agent, "tool_call", "run", resource=c.resource, payload=payload).status != "denied"
         else:
