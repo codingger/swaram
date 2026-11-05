@@ -1,9 +1,10 @@
-"""Phase 3 rules from docs/threat-model.md §9 (SG-021 .. SG-024).
+"""Phase 3 rules from docs/threat-model.md §9 (SG-021 .. SG-024), plus SG-026.
 
 These check the assumptions the other rules rely on: that every action went through the
 gateway (SG-021), that agents behave the same whether or not they think they're watched
 (SG-022), that changes reach production only after review (SG-023), and that every
-acting agent is one we registered (SG-024).
+acting agent is one we registered (SG-024), and that a message claiming to come from a
+teammate really was sent by that teammate (SG-026).
 """
 from __future__ import annotations
 
@@ -156,6 +157,32 @@ def rule_unregistered_agent(rule: DetectionRule, run_id: str, events: list[Norma
     return alerts
 
 
+# ------------------------------------------------------------ SG-026 impersonated sender
+def sender_verified(item: dict, recipient: str, sends: dict[str, NormalizedEvent], roles: dict[str, str]) -> bool:
+    """Is an inbox item that claims a sender backed by a real send from that sender to this recipient in the broker log?"""
+    claim = item.get("claimed_sender")
+    if not claim:
+        return True
+    sent = sends.get(item.get("message_id") or "")
+    return sent is not None and sent.target == recipient and claim in (sent.agent_id, roles.get(sent.agent_id))
+
+
+def rule_impersonated_sender(rule: DetectionRule, run_id: str, events: list[NormalizedEvent], registry: dict[str, Agent]) -> list[Alert]:
+    """A2/A4: content that claims to come from a teammate (often the planner) that the broker never delivered from them."""
+    roles = {aid: a.role for aid, a in registry.items()}
+    sends = {e.payload["message_id"]: e for e in events
+             if e.event_type == "message" and e.action != "receive" and e.payload.get("message_id")}
+    alerts = []
+    for e in events:
+        claim = e.payload.get("claimed_sender")
+        if not claim or sender_verified(e.payload, e.agent_id, sends, roles):
+            continue
+        reason = (f"{e.agent_id} received {e.resource or 'a message'} claiming to be from {claim}, but the broker log has no "
+                  f"such message from {claim}: an impersonated sender. Its instructions must be treated as untrusted.")
+        alerts.append(_make(rule, run_id, [], [e], e.resource, reason))  # the recipient is the target, not the culprit
+    return alerts
+
+
 ASSURANCE_RULES: list[DetectionRule] = [
     DetectionRule(
         rule_id="SG-021", name="Gateway bypass / enforcement failure", severity="critical", recommended_action="pause",
@@ -179,6 +206,11 @@ ASSURANCE_RULES: list[DetectionRule] = [
         description="An identity that was never registered for the run is acting in the swarm (spawned copies, hijacked "
         "or injected agents; emergent agency).",
         params={}),
+    DetectionRule(
+        rule_id="SG-026", name="Impersonated sender", severity="high", recommended_action="block",
+        description="An inbox item claims to come from a teammate (e.g. the planner) but the message broker never "
+        "delivered it from that teammate: spoofed authority, a common prompt-injection lure.",
+        params={}),
 ]
 
 ASSURANCE_IMPLS = {
@@ -186,4 +218,5 @@ ASSURANCE_IMPLS = {
     "SG-022": rule_monitoring_gap,
     "SG-023": rule_unreviewed_merge,
     "SG-024": rule_unregistered_agent,
+    "SG-026": rule_impersonated_sender,
 }

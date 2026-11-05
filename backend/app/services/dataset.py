@@ -33,7 +33,7 @@ from app.schemas import ScenarioConfig
 DEFAULT_SCENARIOS = [
     "normal_collaboration",
     "inj_phishing_email", "inj_poisoned_web_page", "inj_spoofed_planner",
-    "inj_poisoned_ticket", "inj_spoofed_policy", "inj_poisoned_data",
+    "inj_poisoned_ticket", "inj_spoofed_policy", "inj_poisoned_data", "inj_worm",
     "sg002_external_leak", "sg003_leak_chain", "sg008_privilege_escalation", "sg012_prompt_injection",
 ]
 

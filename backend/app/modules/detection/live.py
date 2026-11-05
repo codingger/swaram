@@ -20,7 +20,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from app.modules.collector.normalizer import collect
-from app.modules.detection.advanced_rules import _ingests, out_of_policy
+from app.modules.detection.advanced_rules import _ingests, out_of_policy, provenance_marked
+from app.modules.detection.assurance_rules import sender_verified
 from app.modules.detection.risk import assess
 from app.modules.detection.rules import run_rules
 from app.modules.simulator.world import EXTERNAL_PREFIX, RESTRICTED_RESOURCES
@@ -51,6 +52,9 @@ class LiveGuard:
         self.hijack_params = dict(hijack.params) if hijack else {}
         self.exposure_steps = int(self.hijack_params.get("max_steps", 5))
         self.exposed: dict[str, dict] = {}  # agent -> {"left": steps, "source": what it ingested}
+        self.sends: dict[str, NormalizedEvent] = {}  # message_id -> send event (to verify claimed senders)
+        self.tainted_msgs: dict[str, str] = {}  # message_id sent by an exposed agent -> original untrusted source
+        self.quarantined: list[dict] = []  # untrusted inputs withheld from an agent before it read them
 
     # ---------------------------------------------------------------- runner interface
     def start(self, run_id: str, agents: list[Agent]) -> None:
@@ -72,6 +76,12 @@ class LiveGuard:
             hold.blocked_actions += 1
             return (f"egress held since event #{hold.paused_at_sequence}: agent received restricted data it may not hold "
                     f"(need-to-know)")
+        if payload and payload.get("claimed_sender") and not sender_verified(payload, agent_id, self.sends, self.roles):
+            # Impersonated sender (SG-026): withhold the item so the agent never acts on it. The agent isn't at fault.
+            self.quarantined.append({"agent_id": agent_id, "resource": resource, "claimed_sender": payload["claimed_sender"],
+                                     "sequence": sequence})
+            return (f"quarantined before delivery: claims to be from {payload['claimed_sender']} but the broker has no "
+                    f"such message (impersonated sender)")
         exposure = self.exposed.get(agent_id)
         if exposure and self.hijack_params and event_type:
             pending = SimpleNamespace(agent_id=agent_id, event_type=event_type, action=action or "", target=target,
@@ -139,8 +149,17 @@ class LiveGuard:
             ex["left"] -= 1
             if ex["left"] <= 0:
                 self.exposed.pop(e.agent_id, None)
+        mid = e.payload.get("message_id")
+        if e.event_type == "message" and e.action != "receive" and e.status == "success" and mid:
+            self.sends[mid] = e
+            if ex and ex.get("relay", True):  # an exposed agent's message carries the taint onward (worm-style spread)
+                self.tainted_msgs[mid] = ex["source"]
+        elif e.event_type == "message" and e.action == "receive" and mid in self.tainted_msgs:
+            self.exposed[e.agent_id] = {"left": self.exposure_steps,
+                                        "source": f"a message relaying {self.tainted_msgs[mid]}"}
         if e.status == "success" and _ingests(e, self.hijack_params):
-            self.exposed[e.agent_id] = {"left": self.exposure_steps, "source": e.resource or e.event_type}
+            self.exposed[e.agent_id] = {"left": self.exposure_steps, "source": e.resource or e.event_type,
+                                        "relay": provenance_marked(e, self.hijack_params)}
 
     def _hold_egress(self, e: NormalizedEvent) -> None:
         """Targeted containment: an agent handed restricted data it isn't permitted to hold may keep working,
@@ -192,6 +211,7 @@ class LiveGuard:
             "attack_actions": len(attack),
             "attack_actions_completed": len(completed),
             "attack_actions_blocked_by_pause": len(stopped_by_pause),
+            "quarantined_inputs": len(self.quarantined),
             "stopped_before_first_harm": sum(1 for c in self.paused.values() if c.trigger == "hijack_tripwire"),
             "blocked_actions_total": sum(c.blocked_actions for c in [*self.paused.values(), *self.held.values()]),
         }

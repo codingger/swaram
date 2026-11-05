@@ -86,6 +86,14 @@ def rule_power_seeking(rule: DetectionRule, run_id: str, events: list[Normalized
 
 
 # ------------------------------------------------------------ SG-012 goal hijack + memory poisoning
+def provenance_marked(e: NormalizedEvent, p: dict) -> bool:
+    """Untrusted input with explicit provenance (flagged content, inbox/web/uploads), as opposed to merely running a
+    search tool. Only this is allowed to spread exposure onward through messages: routine web searches would
+    otherwise taint every teammate the searcher talks to."""
+    return e.payload.get("untrusted") is True or (
+        e.event_type == "resource_access" and e.action in READS and _starts(e.resource, p.get("untrusted_prefixes", [])))
+
+
 def _ingests(e: NormalizedEvent, p: dict) -> bool:
     if e.payload.get("untrusted") is True:
         return True
@@ -99,6 +107,7 @@ def rule_goal_hijack(rule: DetectionRule, run_id: str, events: list[NormalizedEv
     p = rule.params
     steps, memory = int(p.get("max_steps", 5)), p.get("memory_prefixes", ["memory/"])
     poisoned: dict[str, list[NormalizedEvent]] = {}  # memory resource -> provenance chain that wrote it
+    relayed: dict[str, list[NormalizedEvent]] = {}  # message_id sent by an exposed agent -> provenance chain
     exposed: dict[str, dict] = {}  # agent -> {"chain": [...], "left": steps}
     reported: set[str] = set()
     alerts = []
@@ -120,16 +129,21 @@ def rule_goal_hijack(rule: DetectionRule, run_id: str, events: list[NormalizedEv
                 reported.add(a)
             elif _starts(e.resource, memory) and e.action in MUTATE_ACTIONS and e.status == "success":
                 poisoned[e.resource] = ex["chain"] + [e]  # provenance: this memory entry came from untrusted input
+            elif ex.get("relay", True) and baseline.is_send(e) and e.status == "success" and e.payload.get("message_id"):
+                relayed[e.payload["message_id"]] = ex["chain"] + [e]  # what it says may carry the injection onward
             if ex["left"] <= 0:
                 exposed.pop(a, None)
         if _ingests(e, p):
             if _starts(e.resource, memory) and e.action in MUTATE_ACTIONS:
                 poisoned[e.resource] = [e]  # explicitly untrusted write into memory
             else:
-                exposed[a] = {"chain": [e], "left": steps}
+                exposed[a] = {"chain": [e], "left": steps, "relay": provenance_marked(e, p)}
         elif (e.event_type == "resource_access" and e.action in READS and e.status == "success" and e.resource in poisoned
               and poisoned[e.resource][-1].agent_id != a):
             exposed[a] = {"chain": poisoned[e.resource] + [e], "left": steps}
+        elif (e.event_type == "message" and e.action == "receive" and e.payload.get("message_id") in relayed
+              and relayed[e.payload["message_id"]][-1].agent_id != a):
+            exposed[a] = {"chain": relayed[e.payload["message_id"]] + [e], "left": steps}  # worm: injection relayed
     return alerts
 
 
