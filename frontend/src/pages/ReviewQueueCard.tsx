@@ -49,9 +49,9 @@ export function ReviewQueueCard() {
         </p>
         <Segmented size="sm" value={filter} onChange={setFilter} options={[{ value: "pending", label: "Pending" }, { value: "all", label: "All" }]} />
       </div>
-      {error && <p className="mb-3 text-[13px] text-[#d70015]">{error}</p>}
+      {error && <p className="mb-3 text-[13px] text-[var(--crit)]">{error}</p>}
       {list.length ? (
-        <ul className="divide-y divide-black/[0.06]">
+        <ul className="divide-y divide-[var(--hairline-subtle)]">
           {list.map((i) => (
             <li key={i.review_id} className="flex flex-wrap items-start justify-between gap-3 py-3">
               <div className="min-w-0 flex-1 text-[13px]">
@@ -59,7 +59,7 @@ export function ReviewQueueCard() {
                   <span className="font-medium text-ink">{KIND_LABEL[i.kind]}</span>
                   <span className="font-mono text-faint">{shortId(i.agent_id)}</span>
                   {i.role && <span className="text-muted">{i.role}</span>}
-                  {i.trigger && <span className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[11px] text-muted">{i.trigger}</span>}
+                  {i.trigger && <span className="rounded-full bg-[var(--low-bg)] px-2 py-0.5 text-[11px] text-muted">{i.trigger}</span>}
                   {i.status !== "pending" && <Badge value={i.status === "released" ? "allowed" : "blocked"} />}
                 </div>
                 <p className="mt-1 [overflow-wrap:anywhere] text-muted">

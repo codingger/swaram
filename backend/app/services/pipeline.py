@@ -271,7 +271,8 @@ class Pipeline:
         run_id = run_id or f"run-{uuid.uuid4().hex[:8]}"
         hub.publish("run_started", {"config": config.model_dump(mode="json")}, run_id)
         before = quota.quota_status()["calls_today"] if config.agent_backend == "gemini" else None
-        guard = LiveGuard(self.rules(), config.live_guard, config.pause_at) if config.live_guard != "off" else None
+        guard = (LiveGuard(self.rules(), config.live_guard, config.pause_at, policy=self.policy())
+                 if config.live_guard != "off" else None)
         from app.services import review
 
         stream = LiveStream(hub, guard, review.recorder(self.store, run_id) if config.persist else None)
@@ -380,9 +381,20 @@ class Pipeline:
         policy = policy or self.policy()
         alerts = self.alerts(run_id)
         actions = respond(alerts, self.normalized_events(run_id), policy)
+        live = self.live_report(run_id)
+        if live and live.containment:  # what the live guard already did mid-run, as auditable responses
+            from app.modules.response.policy import respond_live
+
+            live_actions = respond_live(live.containment, alerts, policy)
+            for a in live_actions:
+                a.run_id = run_id
+            actions += live_actions
         if persist:
             self._replace("response_actions", run_id, [(a.response_id, _dump(a)) for a in actions])
-            status = {a.alert_id: alert_status_after(a) for a in actions}
+            status: dict[str, str] = {}
+            for a in actions:  # a live containment outranks a post-run "responded"
+                if a.alert_id and status.get(a.alert_id) != "contained":
+                    status[a.alert_id] = alert_status_after(a)
             for al in alerts:
                 al.status = status.get(al.alert_id, al.status)
             if alerts:

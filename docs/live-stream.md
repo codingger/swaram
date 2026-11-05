@@ -51,6 +51,9 @@ if today's quota can't cover them (`GET /api/gemini/quota`).
 | `detection` | a rule fires for the first time on some agents | `{sequence, timestamp, event_id, rule_id, rule_name, severity, agent_ids, reason}` (empty `agent_ids` = run-level, e.g. SG-026) |
 | `containment` | an agent is paused, or its outbound transfers held | `{agent_id, role, scope: "agent"\|"egress", trigger: "risk"\|"hijack_tripwire"\|"need_to_know", paused_at_sequence, risk, explanation, blocked_actions}` |
 | `quarantine` | an untrusted input was withheld before the agent read it | `{agent_id, resource, claimed_sender, sequence}` |
+| `response` | the response policy acted on a new alert, live | `{sequence, rule_id, rule_name, severity, decision, agent_ids, applied}`; `applied` is e.g. `["paused"]`, `["egress held"]`, `["recorded"]`, or `["would_pause"]` in detect mode |
+| `operator` | a person paused an agent / held its egress from the UI | `{agent_id, action, result, note}` |
+| `review` | a review item was created or decided | `{action: "created"\|"decided", item}` (see the review queue) |
 | `quota` | after a Gemini run | the `/api/gemini/quota` object |
 | `run_finished` | the run is done (and saved, and processed if `auto_pipeline`) | `{persisted, counts, stages, live_metrics, alerts, ground_truth}`. `live_metrics.data_left_the_system` is the headline. `ground_truth` is for demo scoring only. |
 | `run_failed` | the run crashed | `{error}` |
@@ -58,6 +61,16 @@ if today's quota can't cover them (`GET /api/gemini/quota`).
 Suggested UI: an agent grid that turns amber on `detection` and red on `containment`; a feed of `event`s where
 `status: "denied"` is shown as blocked; toasts for `detection`, `containment` and `quarantine`; a banner on
 `run_finished` with whether data left the system.
+
+## Operator controls (while a run is live)
+
+```
+POST /api/live/{run_id}/agents/{agent_id}   {"action": "pause" | "hold_egress", "note": "..."}  -> {"result": "paused"}
+POST /api/live/{run_id}/stop                {"note": "..."}  -> pauses every agent (kill switch)
+```
+
+Only for runs started with `live_guard: "contain"` that are still running (409 otherwise). Each action is published
+as `containment` + `operator`, and lands in the review queue (`GET /api/reviews`, release / confirm).
 
 ## Real agents (live ingest)
 

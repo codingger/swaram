@@ -59,7 +59,7 @@ def open_session(pipeline, name: str, agents: list[dict], live_guard: str = "con
     regs = [Agent.model_validate({"name": a.get("name") or a["agent_id"], "permissions": a.get("permissions") or [],
                                   **{k: v for k, v in a.items() if k in ("agent_id", "role")}, "run_id": run_id})
             for a in agents]
-    guard = LiveGuard(pipeline.rules(), live_guard, pause_at) if live_guard != "off" else None
+    guard = LiveGuard(pipeline.rules(), live_guard, pause_at, policy=pipeline.policy()) if live_guard != "off" else None
     now = now_iso()
     run = Run(run_id=run_id, scenario_id=f"ingest:{name}", agent_count=len(regs), seed=0, gateway_mode="monitor",
               drop_rate=0.0, agent_backend="external", agent_mode="external", created_at=now, base_time=now,

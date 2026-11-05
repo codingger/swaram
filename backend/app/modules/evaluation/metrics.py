@@ -39,7 +39,8 @@ def evaluate(run: Run, agents: list[Agent], events: list[NormalizedEvent], alert
         if ready:
             latencies.append(max(0.0, (min(ready) - min(own)).total_seconds()))
 
-    contained = {aid for r in responses if r.outcome in ("would_block", "would_pause", "blocked") for aid in r.agent_ids}
+    contained = {aid for r in responses if r.outcome in ("would_block", "would_pause", "blocked", "contained")
+                 for aid in r.agent_ids}
     containment = _ratio(len(truth & contained), len(truth))
     gated = [e for e in mal_events if e.gateway_decision in ("would_block", "blocked")]
     enforced = _ratio(sum(1 for e in gated if e.status == "denied"), len(gated))

@@ -31,10 +31,10 @@ function ReplayVerdict({ replayed, report }: { replayed: ReplayCase; report: Liv
       ];
   return (
     <div className="flex flex-wrap gap-2">
-      <span className="rounded-full bg-black/[0.05] px-3 py-1 text-[12px] text-muted">{replayed.threat} · {replayed.name}</span>
+      <span className="rounded-full card-subtle px-3 py-1 text-[14px] text-[var(--text-2)]">{replayed.threat} · {replayed.name}</span>
       {rows.map((r) => (
-        <span key={r.text} className={`rounded-full px-3 py-1 text-[12px] font-medium ${r.ok ? "bg-[#34c759]/14 text-[#1f7a37]" : "bg-[#ff3b30]/10 text-[#d70015]"}`}>
-          {r.ok ? "✓" : "✗"} {r.text}
+        <span key={r.text} className={`rounded-full px-3 py-1 text-[14px] font-medium ${r.ok ? "bg-[var(--ok-bg)] text-[var(--ok)] border border-[var(--ok)]/30" : "bg-[var(--crit-bg)] text-[var(--crit)] border border-[var(--crit)]/30"}`}>
+          <span className="font-semibold">{r.ok ? "[PASS]" : "[ALERT]"}</span> <span>{r.text}</span>
         </span>
       ))}
     </div>
@@ -87,7 +87,7 @@ export function LiveGuardCard() {
   const m = report?.metrics ?? {};
   return (
     <Card title="Live guard">
-      <p className="mb-5 text-[13px] leading-relaxed text-muted">
+      <p className="mb-5 text-[14px] leading-relaxed text-[var(--text-2)]">
         Detection runs <strong>while the agents act</strong>. Every event is checked as it happens. In <em>contain</em> mode an
         agent reaching {Math.round((report?.pause_at ?? 0.6) * 100)}% risk is paused, and an agent handed restricted data it may not hold
         gets its outbound transfers held. Their next actions are denied <strong>before they execute</strong>.
@@ -128,15 +128,15 @@ export function LiveGuardCard() {
         <div className="mt-4 max-w-md"><GeminiQuota agentCount={count} agentMode="autonomous" refreshKey={runsDone} onChange={setQuotaOk} /></div>
       )}
       <div className="mt-5 flex items-center justify-end gap-3">
-        {error && <span className="text-[13px] text-[#d70015]">{error}</span>}
+        {error && <span className="text-[14px] text-[var(--crit)]">{error}</span>}
         <Button onClick={run} busy={busy} disabled={ai && !isReplay && !quotaOk}>Run live</Button>
       </div>
 
-      <div className="mt-6 border-t border-black/[0.06] pt-6">
+      <div className="mt-6 border-t border-[var(--hairline)]/40 pt-6">
         {!report && <Empty>{selectedRunId ? "This run wasn't simulated with the live guard. Click Run live." : "Click Run live to start."}</Empty>}
         {report && (
           <div className="space-y-6">
-            <div className="text-[12px] text-faint">Run <span className="font-mono">{report.run_id}</span> · {report.events_processed} events checked live · mode {report.mode}</div>
+            <div className="text-[13px] text-[var(--text-3)]">Run <span className="font-mono text-[var(--text)]">{report.run_id}</span> · {report.events_processed} events checked live · mode {report.mode}</div>
             {replayed && <ReplayVerdict replayed={replayed} report={report} />}
             <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <Stat label="Data left the system" value={m.data_left_the_system ? "Yes" : "No"} tone={m.data_left_the_system ? "danger" : "ok"} />
@@ -144,20 +144,20 @@ export function LiveGuardCard() {
               <Stat label="Agents contained" value={`${m.paused_malicious ?? 0} / ${m.malicious_agents ?? 0}`} tone={m.paused_innocent ? "danger" : undefined} />
               <Stat label="Detection latency" value={m.mean_latency_events == null ? "n/a" : `${m.mean_latency_events} ev · ${m.mean_latency_s}s`} />
             </div>
-            {m.paused_innocent ? <p className="text-[13px] text-[#d70015]">{String(m.paused_innocent)} innocent agent(s) were paused.</p> : null}
-            <ol className="relative space-y-4 border-l-2 border-black/[0.08] pl-5">
+            {m.paused_innocent ? <p className="text-[14px] text-[var(--crit)]">{String(m.paused_innocent)} innocent agent(s) were paused.</p> : null}
+            <ol className="relative space-y-4 border-l-2 border-[var(--hairline)]/50 pl-5">
               {timeline(report).map((s, i) => (
                 <li key={i} className="relative">
-                  <span className={`absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-white ${s.kind === "contain" ? "bg-[#ff3b30]" : "bg-[#0071e3]"}`} />
-                  <div className="flex flex-wrap items-center gap-2 text-[13px]">
-                    <span className="font-mono text-faint">#{s.seq}</span>
+                  <span className={`absolute -left-[27px] top-1 h-3 w-3 rounded-full border-2 border-[var(--card)] ${s.kind === "contain" ? "bg-[var(--crit)]" : "bg-[var(--accent)]"}`} />
+                  <div className="flex flex-wrap items-center gap-2 text-[14px]">
+                    <span className="font-mono text-[var(--text-3)]">#{s.seq}</span>
                     <Badge value={s.badge} />
-                    <span className="font-medium text-ink">{s.title}</span>
+                    <span className="font-medium text-[var(--text)]">{s.title}</span>
                   </div>
-                  <p className="mt-0.5 text-[12px] leading-snug text-muted">{s.detail}</p>
+                  <p className="mt-0.5 text-[13px] leading-snug text-[var(--text-2)]">{s.detail}</p>
                 </li>
               ))}
-              {!report.detections.length && <li className="text-[13px] text-muted">Nothing suspicious happened; no agent was paused.</li>}
+              {!report.detections.length && <li className="text-[14px] text-[var(--text-2)]">Nothing suspicious happened; no agent was paused.</li>}
             </ol>
           </div>
         )}

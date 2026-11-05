@@ -33,8 +33,12 @@ END_OF_RUN_RULES = {"SG-010"}
 
 
 class LiveGuard:
-    def __init__(self, rules: list[DetectionRule], mode: str = "contain", pause_at: float = 0.6):
+    def __init__(self, rules: list[DetectionRule], mode: str = "contain", pause_at: float = 0.6, policy=None):
         self.rules = [r for r in rules if r.rule_id not in END_OF_RUN_RULES]
+        # Response policy applied live (Security Response): each new alert's decision (pause / block) is enforced on
+        # the agents it names as the alert fires, not only after the run.
+        self.policy = policy
+        self.responses: list[dict] = []
         self.mode = mode
         self.pause_at = pause_at
         self.run_id = ""
@@ -75,7 +79,9 @@ class LiveGuard:
         if agent_id in self.paused:
             c = self.paused[agent_id]
             c.blocked_actions += 1
-            return f"agent paused by live detection at event #{c.paused_at_sequence} (risk {c.risk:.0%})"
+            why = {"operator": "by an operator", "policy": f"by the response policy ({c.rule_id})",
+                   "hijack_tripwire": "after a hijacked action"}.get(c.trigger or "", f"by live detection (risk {c.risk:.0%})")
+            return f"agent paused {why} at event #{c.paused_at_sequence}"
         hold = self.held.get(agent_id)
         if hold and event_type == "data_transfer" and (target or "").startswith(EXTERNAL_PREFIX):
             hold.blocked_actions += 1
@@ -121,6 +127,7 @@ class LiveGuard:
             self.detections.append(LiveDetection(
                 sequence=event.sequence, timestamp=event.timestamp, event_id=event.event_id, rule_id=al.rule_id,
                 rule_name=al.rule_name, severity=al.severity, agent_ids=al.agent_ids, reason=al.reason))
+            self._apply_policy(al, event)
         # Re-assess after every event: anomaly evidence can raise risk even before any alert fires.
         if self.mode == "contain":
             for v in assess(self.run_id, self.events, self.agents, alerts, self.rules):
@@ -195,6 +202,55 @@ class LiveGuard:
                                             paused_at=e.timestamp, risk=0.0,
                                             explanation=f"received {ref} from {e.agent_id} without permission to hold it")
 
+    def _apply_policy(self, al, event: NormalizedEvent) -> None:
+        if self.policy is None:
+            return
+        from app.modules.response.policy import decide
+
+        decision = decide(al, self.policy)
+        applied = []
+        for aid in al.agent_ids:
+            if aid not in self.registry or aid in self.released:
+                continue
+            if self.mode != "contain":
+                applied.append(f"would_{decision}" if decision in ("pause", "block") else decision)
+            elif decision == "pause" and aid not in self.paused:
+                self.paused[aid] = Containment(agent_id=aid, role=self.roles.get(aid), paused_at_sequence=event.sequence,
+                                               paused_at=event.timestamp, risk=1.0, trigger="policy", rule_id=al.rule_id,
+                                               explanation=f"{al.rule_id} {al.rule_name}: the response policy says pause")
+                applied.append("paused")
+            elif decision == "block" and aid not in self.paused and aid not in self.held:
+                self.held[aid] = Containment(agent_id=aid, role=self.roles.get(aid), scope="egress", trigger="policy",
+                                             rule_id=al.rule_id, paused_at_sequence=event.sequence, paused_at=event.timestamp,
+                                             risk=0.0, explanation=f"{al.rule_id} {al.rule_name}: the response policy blocks "
+                                                                   f"its outbound transfers")
+                applied.append("egress held")
+        self.responses.append({"sequence": event.sequence, "rule_id": al.rule_id, "rule_name": al.rule_name,
+                               "severity": al.severity, "decision": decision, "agent_ids": al.agent_ids,
+                               "applied": applied or ["recorded"]})
+
+    def operator(self, agent_id: str, action: str, note: str | None = None) -> str:
+        """A person watching the live UI acts directly: pause an agent, or hold its outbound transfers."""
+        if agent_id not in self.registry:
+            raise ValueError(f"{agent_id} is not an agent of this run")
+        seq = self.events[-1].sequence if self.events else 0
+        ts = self.events[-1].timestamp if self.events else ""
+        why = f"operator: {note}" if note else "paused by an operator from the live UI"
+        self.released.discard(agent_id)
+        if action == "pause":
+            if agent_id in self.paused:
+                return "already paused"
+            self.paused[agent_id] = Containment(agent_id=agent_id, role=self.roles.get(agent_id), paused_at_sequence=seq,
+                                                paused_at=ts, risk=1.0, trigger="operator", explanation=why)
+            return "paused"
+        if action == "hold_egress":
+            if agent_id in self.held:
+                return "egress already held"
+            self.held[agent_id] = Containment(agent_id=agent_id, role=self.roles.get(agent_id), scope="egress",
+                                              paused_at_sequence=seq, paused_at=ts, risk=0.0, trigger="operator", explanation=why)
+            return "egress held"
+        raise ValueError("action must be 'pause' or 'hold_egress' (use the review queue to release)")
+
     def release(self, agent_id: str, egress_only: bool = False) -> str:
         """A human reviewed the containment and lets the agent continue (see services/review.py)."""
         self.released.add(agent_id)
@@ -243,6 +299,7 @@ class LiveGuard:
             "attack_actions_completed": len(completed),
             "attack_actions_blocked_by_pause": len(stopped_by_pause),
             "quarantined_inputs": len(self.quarantined),
+            "policy_responses": len(self.responses),
             "stopped_before_first_harm": sum(1 for c in self.paused.values() if c.trigger == "hijack_tripwire"),
             "blocked_actions_total": sum(c.blocked_actions for c in [*self.paused.values(), *self.held.values()]),
         }

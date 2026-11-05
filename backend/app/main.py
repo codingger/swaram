@@ -249,6 +249,29 @@ def run_integrity(run_id: str, p: Pipeline = P) -> dict[str, Any]:
     return p.integrity(run_id)
 
 
+@app.post("/api/live/{run_id}/agents/{agent_id}")
+def operate_agent(run_id: str, agent_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """Operator control while a run is live: {"action": "pause" | "hold_egress", "note": "..."}."""
+    from app.services.live_hub import active_stream
+
+    stream = active_stream(run_id)
+    if stream is None:
+        raise HTTPException(409, f"{run_id} isn't running live (it finished, or wasn't started with the live guard)")
+    return {"run_id": run_id, "agent_id": agent_id, "result": stream.operator(agent_id, body.get("action", "pause"), body.get("note"))}
+
+
+@app.post("/api/live/{run_id}/stop")
+def stop_run(run_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """Kill switch: pause every agent of a live run. Pending items appear in the review queue."""
+    from app.services.live_hub import active_stream
+
+    stream = active_stream(run_id)
+    if stream is None:
+        raise HTTPException(409, f"{run_id} isn't running live")
+    note = body.get("note") or "kill switch: all agents paused"
+    return {"run_id": run_id, "paused": {a: stream.operator(a, "pause", note) for a in list(stream.guard.registry)}}
+
+
 @app.post("/api/simulate")
 def simulate(config: ScenarioConfig, p: Pipeline = P):
     if config.workspace_dir:

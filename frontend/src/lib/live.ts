@@ -1,7 +1,7 @@
 /** Client for the live stream (WebSocket /api/live). See docs/live-stream.md for every message type. */
 import { useEffect, useRef, useState } from "react";
 
-export type LiveType = "hello" | "run_started" | "run_agents" | "event" | "detection" | "containment" | "quarantine"
+export type LiveType = "hello" | "run_started" | "run_agents" | "event" | "detection" | "containment" | "quarantine" | "response" | "operator"
   | "run_finished" | "run_failed" | "quota" | "review";
 
 export interface LiveMessage<T = Record<string, unknown>> {

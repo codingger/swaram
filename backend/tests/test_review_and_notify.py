@@ -48,7 +48,7 @@ def test_release_un_pauses_a_live_agent_and_confirm_keeps_it(client):
            "target": "external:approved-partner-api"}
     assert client.post(f"/api/ingest/{run_id}/gate", json=ask).json()["allow"] is False
     pending = client.get("/api/reviews", params={"status": "pending", "run_id": run_id}).json()
-    hold = next(i for i in pending if i["kind"] == "held_egress")
+    hold = next(i for i in pending if i["kind"] == "held_egress" and i["agent_id"] == "ext-coder")
     with client.websocket_connect(f"/api/live?run_id={run_id}") as ws:
         done = client.post(f"/api/reviews/{hold['review_id']}", json={"decision": "release", "note": "partner verified"}).json()
         assert done["status"] == "released" and "egress hold lifted" in done["effect"]

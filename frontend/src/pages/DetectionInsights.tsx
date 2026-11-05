@@ -7,10 +7,10 @@ import { useAppState, useRunData } from "../state";
 import type { AgentAssessment, AuditItem, BenchmarkResult } from "../types";
 
 function RiskBar({ value }: { value: number }) {
-  const color = value >= 0.9 ? "#ff3b30" : value >= 0.6 ? "#ff9500" : value >= 0.2 ? "#ffcc00" : "#34c759";
+  const color = value >= 0.9 ? "var(--crit)" : value >= 0.6 ? "var(--high)" : value >= 0.2 ? "var(--med)" : "var(--ok)";
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-black/[0.06]">
+      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-[var(--hairline-subtle)]">
         <div className="h-full rounded-full" style={{ width: `${Math.max(2, value * 100)}%`, background: color }} />
       </div>
       <span className="tabular-nums">{pct(value)}</span>
@@ -42,18 +42,18 @@ export function AssessmentDetail({ a }: { a: AgentAssessment | null }) {
     <Card title="Why this agent" actions={<Badge value={a.level} />}>
       <div className="space-y-5 text-[14px]">
         <div>
-          <div className="font-mono text-[13px] text-faint">{a.agent_id} · {a.role}</div>
+          <div className="font-mono text-[13px] text-[var(--text-3)]">{a.agent_id} · {a.role}</div>
           <div className="mt-1 text-[22px] font-semibold tracking-[-0.02em]">{pct(a.prior)} → {pct(a.risk)}</div>
-          <div className="text-[12px] text-faint">prior → posterior probability of malicious behavior</div>
+          <div className="text-[12px] text-[var(--text-3)]">prior → posterior probability of malicious behavior</div>
         </div>
 
         <section>
           <h3 className="mb-1.5 text-[13px] font-semibold">Evidence (Bayesian update)</h3>
           {a.evidence.length ? (
-            <ul className="space-y-1 text-[13px] text-ink">
+            <ul className="space-y-1 text-[14px] text-[var(--text)]">
               {a.evidence.map((e) => <li key={e} className="font-mono">{e}</li>)}
             </ul>
-          ) : <p className="text-[13px] text-faint">No evidence moved this agent's risk.</p>}
+          ) : <p className="text-[13px] text-[var(--text-3)]">No evidence moved this agent's risk.</p>}
         </section>
 
         {a.rare_behaviors.length > 0 && (
@@ -61,9 +61,9 @@ export function AssessmentDetail({ a }: { a: AgentAssessment | null }) {
             <h3 className="mb-1.5 text-[13px] font-semibold">Rare for its role (System 1)</h3>
             <ul className="space-y-1.5">
               {a.rare_behaviors.map((r) => (
-                <li key={r.behavior} className="rounded-xl bg-canvas px-3 py-2">
-                  <div className="break-all font-mono text-[12px] text-ink">{r.behavior}</div>
-                  <div className="mt-0.5 text-[12px] tabular-nums text-faint">seen in {pct(r.p)} of same-role agents · {r.bits} bits</div>
+                <li key={r.behavior} className="rounded-xl bg-[var(--card-alt)] px-3 py-2">
+                  <div className="break-all font-mono text-[12px] text-[var(--text)]">{r.behavior}</div>
+                  <div className="mt-0.5 text-[12px] tabular-nums text-[var(--text-3)]">seen in {pct(r.p)} of same-role agents · {r.bits} bits</div>
                 </li>
               ))}
             </ul>
@@ -77,13 +77,13 @@ export function AssessmentDetail({ a }: { a: AgentAssessment | null }) {
               {a.hypotheses.map((h, i) => (
                 <li key={h.hypothesis}>
                   <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span className={i === 0 ? "font-semibold text-ink" : "text-muted"}>{h.label}</span>
-                    <span className="tabular-nums text-faint">{pct(h.score)}</span>
+                    <span className={i === 0 ? "font-semibold text-[var(--text)]" : "text-[var(--text-2)]"}>{h.label}</span>
+                    <span className="tabular-nums text-[var(--text-3)]">{pct(h.score)}</span>
                   </div>
-                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-black/[0.06]">
-                    <div className="h-full rounded-full" style={{ width: `${h.score * 100}%`, background: i === 0 ? "#0071e3" : "#c7c7cc" }} />
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-[var(--hairline-subtle)]">
+                    <div className="h-full rounded-full" style={{ width: `${h.score * 100}%`, background: i === 0 ? "var(--accent)" : "var(--hairline-subtle)" }} />
                   </div>
-                  {h.supporting.length > 0 && <div className="mt-1 text-[12px] text-faint">{h.supporting.join(" · ")}</div>}
+                  {h.supporting.length > 0 && <div className="mt-1 text-[12px] text-[var(--text-3)]">{h.supporting.join(" · ")}</div>}
                 </li>
               ))}
             </ul>
@@ -128,27 +128,27 @@ export function BenchmarkCard() {
         <Button variant="ghost" busy={busy === "full"} disabled={!!busy} onClick={() => run(true)} className="!px-4 !py-1.5 !text-[13px]">Full run</Button>
       </>
     }>
-      <p className="mb-4 text-[13px] leading-relaxed text-muted">
+      <p className="mb-4 text-[14px] leading-relaxed text-[var(--text-2)]">
         Plants 26 labeled attacks (one per threat) and 12 benign look-alikes at random points in realistic runs, then
         drops events to simulate incomplete logs. <strong>Caught</strong> = an attacker was flagged.
         <strong> Caught | evidence</strong> = among trials where some attack evidence survived the drop.
       </p>
-      {error && <p className="text-[13px] text-[#d70015]">{error}</p>}
+      {error && <p className="text-[13px] text-[var(--crit)]">{error}</p>}
       {!res && !error && <Empty>Run the benchmark to measure detection accuracy.</Empty>}
       {res && (
         <div className="space-y-5">
           <div className="-mx-6 overflow-x-auto">
-            <table className="w-full min-w-max text-left text-[13px]">
+            <table className="w-full min-w-max text-left text-[14px]">
               <thead>
-                <tr className="text-[12px] text-faint">
+                <tr className="text-[12px] text-[var(--text-3)]">
                   {["missing events", "trials", "precision", "false-positive rate", "caught", "caught | evidence", "benign alarms"].map((h, i) => (
-                    <th key={h} className={`border-b border-black/[0.08] py-2 pr-4 font-medium ${i === 0 ? "pl-6" : ""}`}>{h}</th>
+                    <th key={h} className={`border-b border-[var(--hairline)] py-2 pr-4 font-medium ${i === 0 ? "pl-6" : ""}`}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {res.rows.map((r) => (
-                  <tr key={r.drop_rate} className="border-b border-black/[0.05] last:border-0">
+                  <tr key={r.drop_rate} className="border-b border-[var(--hairline-subtle)] last:border-0">
                     <td className="py-2 pl-6 pr-4">{pct(r.drop_rate)}</td>
                     <td className="py-2 pr-4 tabular-nums">{r.trials}</td>
                     <td className="py-2 pr-4 font-medium tabular-nums">{pct(r.precision)}</td>
@@ -166,12 +166,12 @@ export function BenchmarkCard() {
             <ul className="space-y-1.5">
               {weakest.map((w) => (
                 <li key={w.name} className="flex items-center justify-between gap-3 text-[13px]">
-                  <span><span className="font-mono text-[12px] text-faint">{w.threat}</span> {w.name}</span>
+                  <span><span className="font-mono text-[12px] text-[var(--text-3)]">{w.threat}</span> {w.name}</span>
                   <RiskBar value={w.rate ?? 0} />
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-[12px] text-faint">
+            <p className="mt-2 text-[12px] text-[var(--text-3)]">
               Misses here are mostly runs where the incriminating step itself was never logged.
               {res.rows[0]?.trials < 200 && " Quick run uses only 2 trials per threat, so per-threat rates are noisy; use Full run for stable numbers."}
             </p>
@@ -231,25 +231,25 @@ export function BaselineCard({ runId, runHasAlerts, onStatus, onChanged }: {
   return (
     <Card title="Behavioral baseline">
       <div className="space-y-4 text-[14px]">
-        <p className="text-[13px] leading-relaxed text-muted">
+        <p className="text-[14px] leading-relaxed text-[var(--text-2)]">
           What each role normally does, learned from benign runs. SG-004 scores how surprising an agent's behavior is
           for its role. Free-text messages are never used.
         </p>
         {s ? (
           <dl className="grid grid-cols-2 gap-3">
-            <div><dt className="text-[12px] text-faint">Agents learned</dt><dd className="text-[22px] font-semibold tabular-nums">{s.agents_learned}</dd></div>
-            <div><dt className="text-[12px] text-faint">Runs learned</dt><dd className="text-[22px] font-semibold tabular-nums">{s.runs_learned}</dd></div>
-            <div className="col-span-2 text-[12px] text-faint">
-              Per-agent histories: <span className="font-medium text-ink">{s.identities_learned ?? 0}</span> agent identities
+            <div><dt className="text-[12px] text-[var(--text-3)]">Agents learned</dt><dd className="text-[22px] font-semibold tabular-nums">{s.agents_learned}</dd></div>
+            <div><dt className="text-[12px] text-[var(--text-3)]">Runs learned</dt><dd className="text-[22px] font-semibold tabular-nums">{s.runs_learned}</dd></div>
+            <div className="col-span-2 text-[12px] text-[var(--text-3)]">
+              Per-agent histories: <span className="font-medium text-[var(--text)]">{s.identities_learned ?? 0}</span> agent identities
               (SG-025 compares each agent with its own past, not just its role)
             </div>
             <div className="col-span-2 flex flex-wrap gap-1.5">
               {Object.entries(s.roles).map(([role, r]) => (
-                <span key={role} className="rounded-full bg-black/[0.05] px-2.5 py-1 text-[12px] text-muted">{role}: {r.agents} agents · {r.behaviors} behaviors</span>
+                <span key={role} className="rounded-full bg-[var(--hairline-subtle)] px-2.5 py-1 text-[12px] text-[var(--text-2)]">{role}: {r.agents} agents · {r.behaviors} behaviors</span>
               ))}
             </div>
           </dl>
-        ) : <p className="text-[13px] text-faint">{summary.error ?? "Loading…"}</p>}
+        ) : <p className="text-[13px] text-[var(--text-3)]">{summary.error ?? "Loading…"}</p>}
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" busy={busy === "run"} disabled={!runId || runHasAlerts || learned} onClick={() => train("run")}
             title={runHasAlerts ? "Only runs with no alerts can be learned" : learned ? "Already learned" : "Add this run to the baseline"}>
@@ -267,7 +267,7 @@ export function BaselineCard({ runId, runHasAlerts, onStatus, onChanged }: {
           </Button>
           <Button variant="ghost" busy={busy === "synthetic"} onClick={() => train("synthetic")}>Retrain from scratch</Button>
         </div>
-        <p className="text-[12px] text-faint">
+        <p className="text-[12px] text-[var(--text-3)]">
           {learned ? "This run is already part of the baseline." : runHasAlerts ? "This run has alerts, so it can't be learned as normal." : "Continual learning: confirm a run is clean, then add it."}
         </p>
       </div>

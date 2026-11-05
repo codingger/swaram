@@ -7,7 +7,7 @@ export type GatewayMode = "off" | "monitor" | "enforce";
 export type Severity = "low" | "medium" | "high" | "critical";
 export type ResponseDecision = "allow" | "alert" | "block" | "pause";
 export type ResponsePolicyMode = "simulate" | "enforce";
-export type ResponseOutcome = "allowed" | "alerted" | "would_block" | "would_pause" | "blocked";
+export type ResponseOutcome = "allowed" | "alerted" | "would_block" | "would_pause" | "blocked" | "contained";
 export type AlertStatus = "open" | "responded" | "contained";
 export type AgentCount = 3 | 5 | 10 | 20;
 

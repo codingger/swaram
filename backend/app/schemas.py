@@ -21,7 +21,9 @@ Severity = Literal["low", "medium", "high", "critical"]
 ResponseDecision = Literal["allow", "alert", "block", "pause"]
 ResponsePolicyMode = Literal["simulate", "enforce"]
 # `blocked` is only ever recorded when the controlled gateway actually denied a request.
-ResponseOutcome = Literal["allowed", "alerted", "would_block", "would_pause", "blocked"]
+# contained = the live guard paused / held the agent mid-run (no later action needed denying); blocked = an action was
+# actually denied before it executed.
+ResponseOutcome = Literal["allowed", "alerted", "would_block", "would_pause", "blocked", "contained"]
 AlertStatus = Literal["open", "responded", "contained"]
 
 AGENT_COUNTS = (3, 5, 10, 20)
@@ -307,7 +309,8 @@ class Containment(BaseModel):
     risk: float
     explanation: Optional[str] = None
     blocked_actions: int = 0
-    trigger: Optional[str] = None  # risk | hijack_tripwire (blocked before its first harmful action) | need_to_know
+    trigger: Optional[str] = None  # risk | hijack_tripwire | need_to_know | policy | operator
+    rule_id: Optional[str] = None  # the alert's rule, when the response policy triggered it
 
 
 class LiveReport(BaseModel):

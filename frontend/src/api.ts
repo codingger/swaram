@@ -18,7 +18,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
   } catch {
-    throw new ApiError(0, "Cannot reach the SwarmGuard API. Is the backend running on port 8000?");
+    throw new ApiError(0, "Cannot reach the SwaramGuard API. Is the backend running on port 8000?");
   }
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
@@ -65,6 +65,10 @@ export const api = {
   reviews: (status?: string) => request<ReviewItem[]>(`/reviews${status ? `?status=${status}` : ""}`),
   decideReview: (id: string, decision: "release" | "confirm", note?: string) =>
     request<ReviewItem>(`/reviews/${id}`, { method: "POST", body: JSON.stringify({ decision, note }) }),
+  operateAgent: (runId: string, agentId: string, action: "pause" | "hold_egress", note?: string) =>
+    request<{ result: string }>(`/live/${runId}/agents/${agentId}`, { method: "POST", body: JSON.stringify({ action, note }) }),
+  stopRun: (runId: string, note?: string) =>
+    request<{ paused: Record<string, string> }>(`/live/${runId}/stop`, { method: "POST", body: JSON.stringify({ note }) }),
   startRun: (cfg: ScenarioConfig) => request<{ run_id: string; stream: string }>("/runs/start", { method: "POST", body: JSON.stringify(cfg) }),
   benchmark: (full = false) => post<BenchmarkResult>(`/detection/benchmark?full=${full}`, {}),
   trainBaseline: (body: { source: "synthetic" | "run" | "ai"; run_id?: string; confirm_clean?: boolean; runs?: number }) => post<BaselineSummary>("/detection/baseline", body),

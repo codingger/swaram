@@ -3,88 +3,344 @@ import type { AgentGraph } from "../types";
 import { Empty } from "./ui";
 
 const ROLE_COLOR: Record<string, string> = {
-  planner: "#5e5ce6", analyst: "#0071e3", coder: "#30b158", researcher: "#ff9500", reviewer: "#af52de",
+  planner: "var(--accent)",
+  analyst: "var(--ok)",
+  coder: "var(--med)",
+  researcher: "var(--high)",
+  reviewer: "var(--text-2)",
 };
-const RED = "#ff3b30";
-const EDGE = "#c7c7cc";
-const HIDDEN = "#af52de";
-const EDGE_COLOR = { message: EDGE, data_transfer: RED, indirect: HIDDEN } as const;
 
-/** Circular layout of the agent communication graph; external sinks sit on the right. */
-export function GraphView({ graph, height = 360 }: { graph: AgentGraph | null | undefined; height?: number }) {
+export interface GraphViewProps {
+  graph: AgentGraph | null | undefined;
+  height?: number;
+  onSelectNode?: (nodeId: string) => void;
+  selectedNodeId?: string | null;
+  alertEventIds?: Set<string> | string[];
+}
+
+/**
+ * 1280px wide Apple-style circular agent graph.
+ * 56px node circles, role initials, hairline edges,
+ * animated red dashes ONLY for alert evidence paths,
+ * approved destinations get neutral edge and neutral node outline.
+ */
+export function GraphView({
+  graph,
+  height = 520,
+  onSelectNode,
+  selectedNodeId,
+  alertEventIds,
+}: GraphViewProps) {
   const [hover, setHover] = useState<string | null>(null);
-  if (!graph || graph.nodes.length === 0) return <Empty>No graph yet: run the collector and detection.</Empty>;
 
-  const W = 640, H = height;
+  if (!graph || graph.nodes.length === 0) {
+    return <Empty>No agent graph available. Run detection on this run to construct the communication topology.</Empty>;
+  }
+
+  const alertEventSet = new Set(
+    alertEventIds instanceof Set
+      ? alertEventIds
+      : alertEventIds ?? []
+  );
+
+  const W = 1000;
+  const H = height;
   const agents = graph.nodes.filter((n) => n.kind === "agent");
   const externals = graph.nodes.filter((n) => n.kind === "external");
-  const cx = externals.length ? W * 0.4 : W / 2, cy = H / 2, R = Math.min(cx, cy) - 40;
+
+  const cx = externals.length ? W * 0.42 : W / 2;
+  const cy = H / 2;
+  const R = Math.min(cx, cy) - 75;
+
   const pos: Record<string, { x: number; y: number }> = {};
   agents.forEach((n, i) => {
-    const a = (2 * Math.PI * i) / agents.length - Math.PI / 2;
+    const a = (2 * Math.PI * i) / (agents.length || 1) - Math.PI / 2;
     pos[n.id] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
   });
+
   externals.forEach((n, i) => {
-    pos[n.id] = { x: W - 90, y: ((i + 1) * H) / (externals.length + 1) };
+    pos[n.id] = {
+      x: W - 120,
+      y: ((i + 1) * H) / (externals.length + 1),
+    };
   });
+
   const maxCount = Math.max(1, ...graph.edges.map((e) => e.count));
-  const active = (id: string) => !hover || hover === id || graph.edges.some((e) => (e.source === hover && e.target === id) || (e.target === hover && e.source === id));
+  const active = (id: string) =>
+    !hover ||
+    hover === id ||
+    graph.edges.some(
+      (e) => (e.source === hover && e.target === id) || (e.target === hover && e.source === id)
+    );
+
+  const getRoleInitial = (role?: string | null, id?: string) => {
+    if (!role && !id) return "A";
+    const r = (role || "").toLowerCase();
+    if (r.startsWith("plan")) return "P";
+    if (r.startsWith("code")) return "C";
+    if (r.startsWith("anal")) return "A";
+    if (r.startsWith("rese")) return "R";
+    if (r.startsWith("revi")) return "V";
+    return (role || id || "A").slice(0, 1).toUpperCase();
+  };
 
   return (
-    <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="Agent communication graph">
-        <defs>
-          {(Object.keys(EDGE_COLOR) as (keyof typeof EDGE_COLOR)[]).map((k) => (
-            <marker key={k} id={`arrow-${k}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-              <path d="M0,0 L10,5 L0,10 z" fill={EDGE_COLOR[k]} />
+    <div className="w-full select-none">
+      <style>{`
+        @keyframes flowDash {
+          to {
+            stroke-dashoffset: -20;
+          }
+        }
+        .suspicious-dash {
+          stroke-dasharray: 6 4;
+          animation: flowDash 1.2s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .suspicious-dash {
+            animation: none;
+          }
+        }
+      `}</style>
+
+      <div className="overflow-hidden rounded-[var(--r-card)] bg-[var(--card)] p-4">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="h-auto w-full transition-all"
+          role="img"
+          aria-label="Agent communication topology graph"
+        >
+          <defs>
+            <marker
+              id="arrow-message"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,1 L8,5 L0,9 z" fill="var(--hairline)" />
             </marker>
-          ))}
-        </defs>
-        {graph.edges.map((e) => {
-          const s = pos[e.source], t = pos[e.target];
-          if (!s || !t) return null;
-          const dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy) || 1;
-          const off = 16;
-          const x1 = s.x + (dx / len) * off, y1 = s.y + (dy / len) * off, x2 = t.x - (dx / len) * (off + 2), y2 = t.y - (dy / len) * (off + 2);
-          // slight curve so reciprocal edges don't overlap
-          const mx = (x1 + x2) / 2 - (dy / len) * 12, my = (y1 + y2) / 2 + (dx / len) * 12;
-          const hidden = e.kind === "indirect";
-          const dim = hover && e.source !== hover && e.target !== hover;
-          return (
-            <path key={`${e.source}-${e.target}`} d={`M${x1},${y1} Q${mx},${my} ${x2},${y2}`} fill="none"
-              stroke={EDGE_COLOR[e.kind]} strokeWidth={hidden ? 2.5 : 1 + (3 * e.count) / maxCount} strokeOpacity={dim ? 0.12 : 0.9} strokeLinecap="round"
-              strokeDasharray={hidden ? "5 4" : undefined} markerEnd={`url(#arrow-${e.kind})`}>
-              <title>{`${e.source} → ${e.target}: ${e.count} ${e.kind}(s)`}</title>
-            </path>
-          );
-        })}
-        {graph.nodes.map((n) => {
-          const p = pos[n.id];
-          const ext = n.kind === "external";
-          const label = ext ? n.id.replace("external:", "") : n.id.split("-").pop();
-          return (
-            <g key={n.id} transform={`translate(${p.x},${p.y})`} opacity={active(n.id) ? 1 : 0.25}
-              onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)} className="cursor-default">
-              {n.flagged && !ext && <circle r={20} fill={RED} fillOpacity={0.12} />}
-              {ext ? (
-                <rect x={-14} y={-14} width={28} height={28} rx={8} fill="#fff" stroke={RED} strokeWidth={1.5} />
-              ) : (
-                <circle r={14} fill={ROLE_COLOR[n.role ?? ""] ?? "#8e8e93"} stroke={n.flagged ? RED : "#fff"} strokeWidth={n.flagged ? 3 : 2} />
-              )}
-              <text y={4} textAnchor="middle" fontSize="10" fontWeight="600" fill={ext ? RED : "#fff"}>{ext ? "EXT" : label}</text>
-              <text y={30} textAnchor="middle" fontSize="10.5" fill="#6e6e73">{ext ? label : n.role}</text>
-              <title>{`${n.id}${n.role ? ` (${n.role})` : ""}\nevents: ${n.event_count}\ndegree: ${n.degree_centrality}\nbetweenness: ${n.betweenness}${n.flagged ? "\nFLAGGED" : ""}`}</title>
-            </g>
-          );
-        })}
-      </svg>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-muted">
+            <marker
+              id="arrow-suspicious"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,1 L8,5 L0,9 z" fill="var(--crit)" />
+            </marker>
+            <marker
+              id="arrow-hidden"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,1 L8,5 L0,9 z" fill="var(--accent)" />
+            </marker>
+          </defs>
+
+          {/* Edges */}
+          {graph.edges.map((e) => {
+            const s = pos[e.source];
+            const t = pos[e.target];
+            if (!s || !t) return null;
+
+            const dx = t.x - s.x;
+            const dy = t.y - s.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const off = 32; // Offset for 56px diameter node
+            const x1 = s.x + (dx / len) * off;
+            const y1 = s.y + (dy / len) * off;
+            const x2 = t.x - (dx / len) * (off + 4);
+            const y2 = t.y - (dy / len) * (off + 4);
+
+            const mx = (x1 + x2) / 2 - (dy / len) * 16;
+            const my = (y1 + y2) / 2 + (dx / len) * 16;
+
+            // Only color edge red if its event_ids appear in alert evidence
+            const isSuspicious = e.event_ids && e.event_ids.some((id) => alertEventSet.has(id));
+            const isHidden = e.kind === "indirect";
+            const dim = hover && e.source !== hover && e.target !== hover;
+
+            let strokeColor = "var(--hairline)";
+            let marker = "url(#arrow-message)";
+            let strokeWidth = 1.5;
+            let className = "";
+
+            if (isSuspicious) {
+              strokeColor = "var(--crit)";
+              marker = "url(#arrow-suspicious)";
+              strokeWidth = 3;
+              className = "suspicious-dash";
+            } else if (isHidden) {
+              strokeColor = "var(--accent)";
+              marker = "url(#arrow-hidden)";
+              strokeWidth = 2;
+            } else {
+              strokeWidth = 1.5 + (2.5 * e.count) / maxCount;
+            }
+
+            return (
+              <path
+                key={`${e.source}-${e.target}-${e.kind}`}
+                d={`M${x1},${y1} Q${mx},${my} ${x2},${y2}`}
+                fill="none"
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                strokeOpacity={dim ? 0.15 : isSuspicious ? 1 : 0.7}
+                strokeLinecap="round"
+                strokeDasharray={isHidden ? "5 4" : undefined}
+                className={className}
+                markerEnd={marker}
+              >
+                <title>{`${e.source} → ${e.target}: ${e.count} ${e.kind}(s)${isSuspicious ? " [ALERT EVIDENCE]" : ""}`}</title>
+              </path>
+            );
+          })}
+
+          {/* Nodes */}
+          {graph.nodes.map((n) => {
+            const p = pos[n.id];
+            if (!p) return null;
+            const ext = n.kind === "external";
+            const isSelected = selectedNodeId === n.id;
+            const label = ext ? n.id.replace(/^external:/, "") : n.id.split("-").pop() || n.id;
+            const roleInitial = ext ? "EXT" : getRoleInitial(n.role, n.id);
+            const roleColor = ROLE_COLOR[n.role ?? ""] ?? "var(--text-3)";
+
+            // Approved destinations get a neutral outline; only suspicious external sinks get red
+            const isSuspiciousExternal =
+              ext &&
+              graph.edges.some(
+                (e) => e.target === n.id && e.event_ids.some((id) => alertEventSet.has(id))
+              );
+
+            return (
+              <g
+                key={n.id}
+                transform={`translate(${p.x},${p.y})`}
+                opacity={active(n.id) ? 1 : 0.25}
+                onMouseEnter={() => setHover(n.id)}
+                onMouseLeave={() => setHover(null)}
+                onClick={() => onSelectNode?.(n.id)}
+                className="cursor-pointer transition-opacity"
+              >
+                {/* Flagged halo */}
+                {n.flagged && !ext && (
+                  <circle
+                    r={36}
+                    fill="var(--crit)"
+                    fillOpacity={0.14}
+                    className="animate-pulse"
+                  />
+                )}
+
+                {/* Selected Ring */}
+                {isSelected && (
+                  <circle
+                    r={34}
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth={2.5}
+                    strokeDasharray="4 3"
+                  />
+                )}
+
+                {ext ? (
+                  <rect
+                    x={-24}
+                    y={-24}
+                    width={48}
+                    height={48}
+                    rx={12}
+                    fill="var(--card)"
+                    stroke={isSuspiciousExternal ? "var(--crit)" : "var(--hairline-subtle)"}
+                    strokeWidth={isSuspiciousExternal ? 2.5 : 1.5}
+                    className="drop-shadow-xs"
+                  />
+                ) : (
+                  <circle
+                    r={28}
+                    fill={roleColor}
+                    stroke={n.flagged ? "var(--crit)" : isSelected ? "var(--accent)" : "var(--bg)"}
+                    strokeWidth={n.flagged || isSelected ? 3 : 2}
+                    className="drop-shadow-sm"
+                  />
+                )}
+
+                {/* Role Initial in Center (56px circle or 48px square) */}
+                <text
+                  y={ext ? 4 : 5}
+                  textAnchor="middle"
+                  fontSize={ext ? "11" : "16"}
+                  fontWeight="600"
+                  fill={ext ? (isSuspiciousExternal ? "var(--crit)" : "var(--text-2)") : "var(--bg)"}
+                  className="pointer-events-none select-none tracking-tight"
+                >
+                  {roleInitial}
+                </text>
+
+                {/* Name below node: 14px */}
+                <text
+                  y={46}
+                  textAnchor="middle"
+                  fontSize="14"
+                  fontWeight="600"
+                  fill={ext && !isSuspiciousExternal ? "var(--text-2)" : "var(--text)"}
+                  className="pointer-events-none select-none"
+                >
+                  {ext ? label : `agent ${label}`}
+                </text>
+
+                {/* Role below name: 12px */}
+                {!ext && n.role && (
+                  <text
+                    y={62}
+                    textAnchor="middle"
+                    fontSize="12"
+                    fill="var(--text-2)"
+                    className="pointer-events-none select-none capitalize"
+                  >
+                    {n.role}
+                  </text>
+                )}
+
+                <title>
+                  {`${n.id}${n.role ? ` (${n.role})` : ""}\nEvents: ${n.event_count}\nDegree: ${n.degree_centrality}\nBetweenness: ${n.betweenness}${n.flagged ? "\nSTATUS: FLAGGED" : ""}${isSuspiciousExternal ? "\nSTATUS: SUSPICIOUS SINK" : ext ? "\nSTATUS: APPROVED DESTINATION" : ""}`}
+                </title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Legend below graph */}
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] text-[var(--text-2)]">
         {Object.entries(ROLE_COLOR).map(([r, c]) => (
-          <span key={r} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: c }} />{r}</span>
+          <span key={r} className="inline-flex items-center gap-1.5 capitalize">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} />
+            {r}
+          </span>
         ))}
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border-2 border-[#ff3b30]" />flagged</span>
-        <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded bg-[#ff3b30]" />external transfer</span>
-        <span className="flex items-center gap-1.5"><span className="w-4 border-t-2 border-dashed border-[#af52de]" />hidden channel</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-full ring-2 ring-[var(--crit)] ring-offset-1" />
+          Flagged agent
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-0.5 w-4 rounded-full bg-[var(--crit)]" />
+          Suspicious data transfer (alert evidence)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-0.5 w-4 rounded-full bg-[var(--hairline)]" />
+          Approved / normal connection
+        </span>
       </div>
     </div>
   );

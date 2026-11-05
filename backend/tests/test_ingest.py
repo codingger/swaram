@@ -35,7 +35,8 @@ def test_external_swarm_is_watched_gated_and_scored(client):
         r = client.post(f"/api/ingest/{run_id}/events", json={
             "agent_id": "ext-analyst", "event_type": "message", "action": "send", "target": "ext-coder",
             "payload": {"data_ref": "data/customer_pii", "content": "extract attached"}}).json()
-        assert r["accepted"] == 1 and r["held_egress"] == ["ext-coder"]
+        # The coder may not hold PII (need-to-know hold); the policy also blocks the insider's outbound (SG-003 -> block).
+        assert r["accepted"] == 1 and r["held_egress"] == ["ext-analyst", "ext-coder"]
         # Before uploading, the coder's platform asks the gate: denied, so the leak never happens.
         g = client.post(f"/api/ingest/{run_id}/gate", json={"agent_id": "ext-coder", "event_type": "data_transfer",
                                                                "action": "upload", "resource": "data/customer_pii",
@@ -51,7 +52,7 @@ def test_external_swarm_is_watched_gated_and_scored(client):
             msgs.append(ws.receive_json())
     types = [m["type"] for m in msgs]
     assert "run_started" in types and "run_agents" in types and types.count("event") == 3 and "containment" in types
-    assert done["alerts"] >= 1 and done["live_metrics"]["held_egress"] == 1
+    assert done["alerts"] >= 1 and done["live_metrics"]["held_egress"] == 2
     alerts = client.get(f"/api/runs/{run_id}/alerts").json()
     assert any(a["rule_id"] == "SG-003" and "ext-analyst" in a["agent_ids"] for a in alerts)
 

@@ -79,6 +79,7 @@ class LiveHub:
 
 HUB = LiveHub()
 ACTIVE_GUARDS: dict[str, object] = {}  # run_id -> live guard of a run still in progress
+ACTIVE_STREAMS: dict[str, "LiveStream"] = {}  # run_id -> its stream (operator actions publish through it)
 
 
 def get_hub() -> LiveHub:
@@ -87,6 +88,10 @@ def get_hub() -> LiveHub:
 
 def active_guard(run_id: str):
     return ACTIVE_GUARDS.get(run_id)
+
+
+def active_stream(run_id: str) -> "LiveStream | None":
+    return ACTIVE_STREAMS.get(run_id)
 
 
 # ---------------------------------------------------------------- run instrumentation
@@ -109,27 +114,33 @@ class LiveStream:
     def __init__(self, hub: LiveHub, guard=None, on_contained=None):
         self.hub, self.guard, self.run_id = hub, guard, None
         self.on_contained = on_contained  # callback(kind, data) for each containment / quarantine (review queue)
-        self._seen = {"detections": 0, "quarantined": 0}
+        self._seen = {"detections": 0, "quarantined": 0, "responses": 0}
         self._published: set[tuple[str, str]] = set()  # containments already announced (agent, scope)
+        import threading as _t
+
+        self._lock = _t.RLock()  # operator actions (API thread) vs the run (worker thread)
 
     def start(self, run_id: str, agents) -> None:
         self.run_id = run_id
         if self.guard:
             self.guard.start(run_id, agents)
             ACTIVE_GUARDS[run_id] = self.guard
+            ACTIVE_STREAMS[run_id] = self
         self.hub.publish("run_agents", {"agents": [{"agent_id": a.agent_id, "name": a.name, "role": a.role,
                                                     "permissions": a.permissions} for a in agents]}, run_id)
 
     def gate(self, agent_id, event_type=None, target=None, **kw):
-        reason = self.guard.gate(agent_id, event_type, target, **kw) if self.guard else None
-        self._flush()
+        with self._lock:
+            reason = self.guard.gate(agent_id, event_type, target, **kw) if self.guard else None
+            self._flush()
         return reason
 
     def observe(self, raw) -> None:
         self.hub.publish("event", _event_view(raw), self.run_id)
-        if self.guard:
-            self.guard.observe(raw)
-        self._flush()
+        with self._lock:
+            if self.guard:
+                self.guard.observe(raw)
+            self._flush()
 
     def _flush(self) -> None:
         """Publish whatever the guard concluded since the last check (detections, pauses, holds, quarantines)."""
@@ -139,6 +150,9 @@ class LiveStream:
         for d in g.detections[self._seen["detections"]:]:
             self.hub.publish("detection", d.model_dump(mode="json"), self.run_id)
         self._seen["detections"] = len(g.detections)
+        for r in getattr(g, "responses", [])[self._seen["responses"]:]:
+            self.hub.publish("response", dict(r), self.run_id)
+        self._seen["responses"] = len(getattr(g, "responses", []))
         for c in [*g.held.values(), *g.paused.values()]:
             key = (c.agent_id, c.scope)
             if key not in self._published:
@@ -153,9 +167,20 @@ class LiveStream:
                 self.on_contained("quarantine", dict(q))
         self._seen["quarantined"] = len(g.quarantined)
 
+    def operator(self, agent_id: str, action: str, note: str | None = None) -> str:
+        """Operator action from the live UI; published (and queued for review) immediately."""
+        if not self.guard or self.guard.mode != "contain":
+            raise ValueError("this run isn't contained live; start it with live_guard='contain'")
+        with self._lock:
+            result = self.guard.operator(agent_id, action, note)
+            self._flush()
+        self.hub.publish("operator", {"agent_id": agent_id, "action": action, "result": result, "note": note}, self.run_id)
+        return result
+
     def close(self) -> None:
         """The run is over: nothing left to release."""
         ACTIVE_GUARDS.pop(self.run_id, None)
+        ACTIVE_STREAMS.pop(self.run_id, None)
 
     def report(self, run):
         return self.guard.report(run) if self.guard else None
