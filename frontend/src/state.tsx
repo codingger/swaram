@@ -91,6 +91,7 @@ export function useRunData<T>(loader: (runId: string) => Promise<T>, runId: stri
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, ...deps]);
   useEffect(() => {
+    setData(null); // Clear stale data immediately upon runId change to prevent stale display
     reload();
   }, [reload]);
   return { data, setData, error, loading, reload };

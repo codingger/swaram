@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppState, useRunData } from "../state";
 import { api } from "../api";
 import { PageHeader } from "../components/PageHeader";
@@ -22,6 +22,12 @@ export function SwarmPage() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Reset selected agent and event drawer when run changes to prevent stale data
+  useEffect(() => {
+    setSelectedAgentId(null);
+    setSelectedEventId(null);
+  }, [selectedRunId]);
 
   const d = dashData.data;
   const assessments = assessmentsData.data ?? [];

@@ -68,18 +68,20 @@ export function IncidentsPage({ initialAlertId }: { initialAlertId?: string }) {
   const [copiedAgentId, setCopiedAgentId] = useState(false);
   const [scoringExpanded, setScoringExpanded] = useState(false);
 
-  // Auto-select highest severity alert on load
+  // Auto-select highest severity alert on load and reset when run changes
   useEffect(() => {
-    if (initialAlertId && alerts.some((a) => a.alert_id === initialAlertId)) {
-      setSelectedId(initialAlertId);
-      return;
+    if (alerts.length > 0) {
+      if (initialAlertId && alerts.some((a) => a.alert_id === initialAlertId)) {
+        setSelectedId(initialAlertId);
+      } else if (!selectedId || !alerts.some((a) => a.alert_id === selectedId)) {
+        const severityOrder: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+        const sorted = [...alerts].sort((a, b) => (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0));
+        setSelectedId(sorted[0].alert_id);
+      }
+    } else {
+      setSelectedId(null);
     }
-    if (alerts.length > 0 && !selectedId) {
-      const severityOrder: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
-      const sorted = [...alerts].sort((a, b) => (severityOrder[b.severity] ?? 0) - (severityOrder[a.severity] ?? 0));
-      setSelectedId(sorted[0].alert_id);
-    }
-  }, [alerts, initialAlertId, selectedId]);
+  }, [alerts, initialAlertId, selectedRunId]);
 
   const currentAlert: Alert | null = alerts.find((a) => a.alert_id === selectedId) ?? alerts[0] ?? null;
 

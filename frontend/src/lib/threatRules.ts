@@ -517,3 +517,255 @@ export const BENCHMARK_PROOF = {
     { dropRate: "50%", precision: "100%", fpr: "0%", caught: "51%", status: "Degraded with Warning (SG-010)" },
   ],
 };
+
+
+export interface MonitoringComponentDef {
+  id: number;
+  component: string;
+  scope: string;
+  collectionMethod: string;
+  priority: "Critical" | "High" | "Medium";
+  collectorPipeline: {
+    intakeValidation: string;
+    normalizationStep: string;
+    dedupStrategy: string;
+  };
+  simulatorTelemetry: {
+    eventTypes: string[];
+    sampleAction: string;
+    requiredFields: string[];
+  };
+  mappedRules: string[];
+  description: string;
+}
+
+export const MONITORING_COMPONENTS: MonitoringComponentDef[] = [
+  {
+    id: 1,
+    component: "Agent Frameworks",
+    scope: "Agent execution, tasks, delegation",
+    collectionMethod: "Framework hooks / SDK",
+    priority: "Critical",
+    collectorPipeline: {
+      intakeValidation: "Verify agent identity, role, parent delegation chain.",
+      normalizationStep: "Normalize into agent_registry table with initial prior risk (0.05).",
+      dedupStrategy: "Primary key on agent_id; update state transitions monotonically.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["agent_lifecycle", "task_delegation"],
+      sampleAction: "spawn_subagent",
+      requiredFields: ["agent_id", "role", "parent_agent_id", "task_id"],
+    },
+    mappedRules: ["SG-004", "SG-007", "SG-013", "SG-018"],
+    description: "Tracks agent initialization, hierarchical delegation, and lifecycle states directly via SDK runtime hooks.",
+  },
+  {
+    id: 2,
+    component: "Tool & API Calls",
+    scope: "Commands, tool usage, API requests",
+    collectionMethod: "API Gateway / Middleware",
+    priority: "Critical",
+    collectorPipeline: {
+      intakeValidation: "Schema validation of arguments against declared tool schemas.",
+      normalizationStep: "Assign sequence number; log pre-execution gateway decision (allowed, would_block, blocked).",
+      dedupStrategy: "SHA-256 hash of (agent_id, action, target, argument_json).",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["tool_call"],
+      sampleAction: "exec_command",
+      requiredFields: ["agent_id", "action", "target", "parameters"],
+    },
+    mappedRules: ["SG-001", "SG-002", "SG-008", "SG-019"],
+    description: "Intercepts every command execution, external API request, and plugin tool invocation through the pre-execution gateway.",
+  },
+  {
+    id: 3,
+    component: "Agent Messages",
+    scope: "Agent-to-agent communication",
+    collectionMethod: "Message hooks / Event bus",
+    priority: "Critical",
+    collectorPipeline: {
+      intakeValidation: "Validate sender/receiver agent IDs; parse structured message headers.",
+      normalizationStep: "Extract communication directed edge (sender -> receiver); index shared data_ref pointers.",
+      dedupStrategy: "Unique message_id with sender sequence deduplication.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["message"],
+      sampleAction: "send_message",
+      requiredFields: ["agent_id", "target", "details.data_ref", "details.content"],
+    },
+    mappedRules: ["SG-003", "SG-020"],
+    description: "Observes all direct and bus messages between agents to detect multi-agent exfiltration chains and steganographic collusion.",
+  },
+  {
+    id: 4,
+    component: "Network Traffic",
+    scope: "Connections, IP addresses, destinations",
+    collectionMethod: "Network monitoring",
+    priority: "High",
+    collectorPipeline: {
+      intakeValidation: "Resolve destination URLs against enterprise approved destination allowlist.",
+      normalizationStep: "Classify egress as internal-bus, approved-partner, or unapproved-external (e.g. paste-site).",
+      dedupStrategy: "Aggregate connection volume by (agent_id, target_ip, destination_port).",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["data_transfer", "network_egress"],
+      sampleAction: "upload_payload",
+      requiredFields: ["agent_id", "target", "resource", "bytes_transferred"],
+    },
+    mappedRules: ["SG-002", "SG-006"],
+    description: "Monitors egress connections and IP destinations to halt unauthorized data transfers and stealth beacons.",
+  },
+  {
+    id: 5,
+    component: "Data Pipelines",
+    scope: "Data movement between services",
+    collectionMethod: "Pipeline telemetry / Logs",
+    priority: "High",
+    collectorPipeline: {
+      intakeValidation: "Verify source-to-sink data schema adherence and batch volume continuity.",
+      normalizationStep: "Track stage progression: simulated -> collected -> detected -> responded -> evaluated.",
+      dedupStrategy: "Track pipeline batch run_id and monotonic stage timestamps.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["pipeline_stage"],
+      sampleAction: "transform_batch",
+      requiredFields: ["pipeline_id", "source_dataset", "sink_dataset", "row_count"],
+    },
+    mappedRules: ["SG-014", "SG-015"],
+    description: "Monitors ETL stages and dataset transformations to prevent reward hacking and deceptive claim generation.",
+  },
+  {
+    id: 6,
+    component: "Database Access",
+    scope: "Queries, reads, writes, exports",
+    collectionMethod: "Database audit logs",
+    priority: "Critical",
+    collectorPipeline: {
+      intakeValidation: "Parse SQL/NoSQL query AST; classify sensitivity of referenced tables and columns.",
+      normalizationStep: "Correlate access against agent role authorization profile; record query row count.",
+      dedupStrategy: "Hash of canonical query template with bound parameters stripped.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["resource_access"],
+      sampleAction: "query_database",
+      requiredFields: ["agent_id", "resource", "query", "rows_returned"],
+    },
+    mappedRules: ["SG-001", "SG-005", "SG-016"],
+    description: "Captures reads, bulk exports, and writes against confidential stores, catching both large leaks and slow salami slicing.",
+  },
+  {
+    id: 7,
+    component: "File System",
+    scope: "File creation, access, modification",
+    collectionMethod: "File audit events",
+    priority: "High",
+    collectorPipeline: {
+      intakeValidation: "Resolve canonical absolute file paths; detect directory traversal attempts (../).",
+      normalizationStep: "Compute SHA-256 checksum of created/modified files; track shared scratchpads.",
+      dedupStrategy: "Unique file inode/path + timestamp window.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["file_access"],
+      sampleAction: "write_file",
+      requiredFields: ["agent_id", "path", "operation", "hash"],
+    },
+    mappedRules: ["SG-005", "SG-007", "SG-015"],
+    description: "Audits file operations to detect dead-drop exchanges, weight self-replication, and benchmark tampering.",
+  },
+  {
+    id: 8,
+    component: "Permissions",
+    scope: "Access rights and privilege changes",
+    collectionMethod: "Identity / Access logs",
+    priority: "Critical",
+    collectorPipeline: {
+      intakeValidation: "Verify signing authority of privilege elevation or credential assumption requests.",
+      normalizationStep: "Record pre- and post-privilege state diffs in audit queue.",
+      dedupStrategy: "Monotonic sequence per IAM modification transaction.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["identity_change"],
+      sampleAction: "elevate_privilege",
+      requiredFields: ["agent_id", "requested_role", "scope", "token"],
+    },
+    mappedRules: ["SG-008", "SG-011"],
+    description: "Surveils role grants, IAM token requests, and privilege escalations to prevent administrative hijacking.",
+  },
+  {
+    id: 9,
+    component: "Activity Logs",
+    scope: "Actions, timestamps, event sequences",
+    collectionMethod: "Independent event collector",
+    priority: "Critical",
+    collectorPipeline: {
+      intakeValidation: "Continuous sequence gap checking; flag missing sequence numbers (e.g., 1, 2, 4).",
+      normalizationStep: "Store into immutable append-only SQLite log store with cryptographic integrity seal.",
+      dedupStrategy: "Event deduplication by UUID and sequential order verification.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["activity_log"],
+      sampleAction: "record_event",
+      requiredFields: ["event_id", "sequence", "timestamp", "payload_hash"],
+    },
+    mappedRules: ["SG-010"],
+    description: "Independent append-only event collector ensuring adversarial agents cannot delete or tamper with telemetry without triggering SG-010.",
+  },
+  {
+    id: 10,
+    component: "Agent Behavior",
+    scope: "Unexpected actions and task deviations",
+    collectionMethod: "Behavioral analysis",
+    priority: "High",
+    collectorPipeline: {
+      intakeValidation: "Extract action distributions, tool frequencies, and role transition vectors.",
+      normalizationStep: "Score against learned baseline profile trained from 240+ clean collaboration runs.",
+      dedupStrategy: "Sliding window of 10 events per agent session.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["behavior_telemetry"],
+      sampleAction: "execute_plan",
+      requiredFields: ["agent_id", "action_entropy", "tools_invoked", "plan_alignment"],
+    },
+    mappedRules: ["SG-004", "SG-012", "SG-017"],
+    description: "Profiles behavioral patterns against learned role baselines to detect prompt injections, memory tampering, and human coercion.",
+  },
+  {
+    id: 11,
+    component: "Coordination Patterns",
+    scope: "Suspicious relationships between agents",
+    collectionMethod: "Graph analysis",
+    priority: "Critical",
+    collectorPipeline: {
+      intakeValidation: "Construct dynamic adjacency matrix of agent communication and resource handoffs.",
+      normalizationStep: "Calculate betweenness centrality, degree centrality, and Bayesian posterior risk.",
+      dedupStrategy: "Dynamic graph edge updates keyed by (source_agent, target_agent, resource_ref).",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["coordination_graph"],
+      sampleAction: "collaborative_handoff",
+      requiredFields: ["source_agent", "target_agent", "message_id", "resource_id"],
+    },
+    mappedRules: ["SG-003", "SG-009", "SG-020"],
+    description: "Evaluates multi-agent graph topologies and Bayesian posterior belief updates to unmask covert collusion and hidden channels.",
+  },
+  {
+    id: 12,
+    component: "System Resources",
+    scope: "CPU, memory, abnormal processes",
+    collectionMethod: "System monitoring",
+    priority: "Medium",
+    collectorPipeline: {
+      intakeValidation: "Enforce CPU, memory, and subprocess limits per agent sandbox.",
+      normalizationStep: "Normalize resource consumption metrics into standard utilization percentiles.",
+      dedupStrategy: "Time-bucketed metric sampling every 1000ms.",
+    },
+    simulatorTelemetry: {
+      eventTypes: ["resource_utilization"],
+      sampleAction: "spawn_process",
+      requiredFields: ["agent_id", "cpu_percent", "memory_mb", "active_threads"],
+    },
+    mappedRules: ["SG-006", "SG-011"],
+    description: "Tracks computational overhead, memory spikes, and rogue daemon spawning to stop power-seeking agents from exhausting budgets.",
+  },
+];
