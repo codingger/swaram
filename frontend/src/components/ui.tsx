@@ -26,10 +26,10 @@ export function Button({ children, variant = "primary", busy, ...props }:
 export function Card({ title, actions, children, className = "", flush = false }:
   { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string; flush?: boolean }) {
   return (
-    <section className={`rounded-[20px] bg-white shadow-card ${className}`}>
+    <section className={`rounded-[var(--r-card)] bg-[var(--card)] shadow-[var(--shadow-1)] border border-[var(--hairline)]/40 transition-all ${className}`}>
       {(title || actions) && (
         <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5">
-          <h2 className="text-[17px] font-semibold tracking-[-0.015em] text-ink">{title}</h2>
+          <h2 className="text-[21px] font-semibold tracking-tight text-[var(--text)]">{title}</h2>
           <div className="flex flex-wrap items-center gap-2">{actions}</div>
         </header>
       )}
@@ -287,18 +287,19 @@ export function InfoButton({ module }: { module: string }) {
   );
 }
 
-export function PageHeader({ step, title, description, module, children }: { step: number; title: string; description: string; module: string; children?: ReactNode }) {
+export function PageHeader({ title, description, module, children }: { step?: number; title: string; description: string; module?: string; children?: ReactNode }) {
   return (
-    <header className="flex flex-wrap items-end justify-between gap-4 pb-2">
-      <div className="min-w-0">
-        <div className="text-[14px] font-semibold text-[#bf4800]">Module {step}</div>
-        <div className="mt-1 flex items-center gap-2">
-          <h1 className="text-[32px] font-semibold leading-[1.1] tracking-[-0.025em] sm:text-[40px]">{title}</h1>
-          <InfoButton module={module} />
+    <header className="mb-8 pt-2">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-[36px] sm:text-[48px] font-semibold leading-[1.08] tracking-[-0.015em] text-[var(--text)]">{title}</h1>
+            {module && <InfoButton module={module} />}
+          </div>
+          <p className="mt-3 max-w-2xl text-[19px] sm:text-[21px] font-normal leading-relaxed text-[var(--text-2)]">{description}</p>
         </div>
-        <p className="mt-3 max-w-2xl text-[17px] leading-relaxed text-muted">{description}</p>
+        {children}
       </div>
-      {children}
     </header>
   );
 }
@@ -306,3 +307,11 @@ export function PageHeader({ step, title, description, module, children }: { ste
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-10 text-center text-[14px] text-faint">{children}</p>;
 }
+
+export { ModePill } from "./ModePill";
+export { Pill } from "./Pill";
+export { Tile } from "./Tile";
+export { Footnotes } from "./Footnotes";
+export { ThemeToggle } from "./ThemeToggle";
+export { GlobalNav } from "./GlobalNav";
+export { Drawer } from "./Drawer";

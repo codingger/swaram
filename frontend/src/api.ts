@@ -18,7 +18,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
   } catch {
-    throw new ApiError(0, "Cannot reach the SwarmGuard API. Is the backend running on port 8000?");
+    throw new ApiError(0, "Cannot reach the SwaramGuard API. Is the backend running on port 8000?");
   }
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { api } from "./api";
 import type { Meta, Run } from "./types";
 
-const RUN_KEY = "swarmguard.selectedRun";
+const RUN_KEY = "swaramguard.selectedRun";
 
 interface AppState {
   runs: Run[];
