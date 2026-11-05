@@ -14,7 +14,7 @@ const columns: Column<NormalizedEvent>[] = [
   {
     key: "timestamp",
     label: "Time (UTC)",
-    className: "w-28 font-mono text-[12px]",
+    className: "w-28 font-mono text-[14px]",
     render: (e) => <span>{e.timestamp.slice(11, 19)}</span>,
   },
   {

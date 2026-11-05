@@ -26,7 +26,10 @@ export interface ScenarioConfig {
   gateway_mode: GatewayMode;
   drop_rate: number;
   agent_backend: string;
+  agent_mode?: "scripted" | "autonomous";
   auto_pipeline: boolean;
+  live_guard?: "off" | "detect" | "contain";
+  pause_at?: number;
   persist: boolean;
 }
 
@@ -67,6 +70,7 @@ export interface Run {
   gateway_mode: GatewayMode;
   drop_rate: number;
   agent_backend: string;
+  agent_mode?: string;
   created_at: string;
   base_time: string;
   stages: Record<string, string>;
@@ -79,6 +83,7 @@ export interface SimulationResult {
   run: Run;
   agents: Agent[];
   events: RawEvent[];
+  live_report?: LiveReport | null;
 }
 
 export interface NormalizedEvent {
@@ -221,6 +226,48 @@ export interface AuditItem {
   reasons: string[];
 }
 
+export interface LiveDetection {
+  sequence: number;
+  timestamp: string;
+  event_id: string;
+  rule_id: string;
+  rule_name: string;
+  severity: Severity;
+  agent_ids: string[];
+  reason: string;
+}
+
+export interface Containment {
+  agent_id: string;
+  role?: string | null;
+  scope: "agent" | "egress";
+  paused_at_sequence: number;
+  paused_at: string;
+  risk: number;
+  explanation?: string | null;
+  blocked_actions: number;
+}
+
+export interface LiveReport {
+  run_id: string;
+  mode: "detect" | "contain";
+  pause_at: number;
+  events_processed: number;
+  detections: LiveDetection[];
+  containment: Containment[];
+  metrics: Record<string, number | boolean | null>;
+  created_at: string;
+}
+
+export interface ReplayCase {
+  name: string;
+  threat: string;
+  benign: boolean;
+  expect_rules: string[];
+  roles: Record<string, string>;
+  culprits: string[];
+}
+
 export interface BenchmarkRow {
   drop_rate: number;
   trials: number;
@@ -245,6 +292,7 @@ export interface BaselineSummary {
   runs_learned: number;
   learned_run_ids: string[];
   agents_learned: number;
+  identities_learned?: number;
   roles: Record<string, { agents: number; behaviors: number }>;
 }
 

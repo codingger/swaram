@@ -1,5 +1,5 @@
 import type {
-  Agent, AgentAssessment, Alert, AuditItem, BaselineSummary, BenchmarkResult, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
+  Agent, AgentAssessment, Alert, AuditItem, BaselineSummary, BenchmarkResult, LiveReport, ReplayCase, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
   NormalizedEvent, RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult,
   SuiteRequest, SuiteResult, AgentGraph,
 } from "./types";
@@ -56,9 +56,13 @@ export const api = {
   detect: (run_id: string, persist: boolean) => post<DetectionResult>("/detect", { run_id, persist }),
   assessments: (id: string) => request<AgentAssessment[]>(`/runs/${id}/assessments`),
   auditQueue: (id: string) => request<AuditItem[]>(`/runs/${id}/audit-queue`),
+  liveReport: (id: string) => request<LiveReport | null>(`/runs/${id}/live-report`),
+  replayCases: () => request<ReplayCase[]>("/detection/replay-cases"),
+  replay: (body: { case: string; agent_count: number; seed: number; live_guard: "off" | "detect" | "contain" }) =>
+    post<SimulationResult>("/detection/replay", body),
   baseline: () => request<BaselineSummary>("/detection/baseline"),
   benchmark: (full = false) => post<BenchmarkResult>(`/detection/benchmark?full=${full}`, {}),
-  trainBaseline: (body: { source: "synthetic" | "run"; run_id?: string }) => post<BaselineSummary>("/detection/baseline", body),
+  trainBaseline: (body: { source: "synthetic" | "run"; run_id?: string; confirm_clean?: boolean }) => post<BaselineSummary>("/detection/baseline", body),
   rules: () => request<DetectionRule[]>("/detection-rules"),
   saveRule: (rule: DetectionRule) => put<DetectionRule>(`/detection-rules/${rule.rule_id}`, rule),
   respond: (run_id: string, policy: ResponsePolicy, persist: boolean) => post<ResponseResult>("/respond", { run_id, policy, persist }),

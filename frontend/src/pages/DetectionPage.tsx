@@ -6,6 +6,7 @@ import { shortId } from "../lib/format";
 import { useAppState, useRunData } from "../state";
 import type { AgentAssessment, Alert, AgentGraph, DetectionRule } from "../types";
 import { AssessmentDetail, auditColumns, BaselineCard, BenchmarkCard, riskColumns } from "./DetectionInsights";
+import { LiveGuardCard } from "./LiveGuardCard";
 import { Sliders, Play, Copy, Check } from "lucide-react";
 import { THREAT_CATEGORIES, THREAT_RULES } from "../lib/threatRules";
 
@@ -61,7 +62,7 @@ export function DetectionPage() {
   const [persist, setPersist] = useState(true);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
-  const [activeTab, setActiveTab] = useState<"findings" | "rules" | "baseline" | "audit">("findings");
+  const [activeTab, setActiveTab] = useState<"findings" | "rules" | "liveguard" | "baseline" | "audit">("findings");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -141,7 +142,7 @@ export function DetectionPage() {
       <PageHeader
         module="detection"
         title="Threat detection"
-        description="Two layers of defense: fast behavioral screening against a learned baseline, and rule-based attack graph correlation across all 20 threat vectors."
+        description="Two layers of defense: fast behavioral screening against a learned baseline, and rule-based attack graph correlation across all threat vectors."
       >
         <div className="flex items-center gap-3">
           <button
@@ -182,6 +183,16 @@ export function DetectionPage() {
             }`}
           >
             Rules (20)
+          </button>
+          <button
+            onClick={() => setActiveTab("liveguard")}
+            className={`rounded-full px-4 py-1.5 text-[13px] font-medium transition-all ${
+              activeTab === "liveguard"
+                ? "bg-[var(--card)] text-[var(--text)] shadow-xs"
+                : "text-[var(--text-2)] hover:text-[var(--text)]"
+            }`}
+          >
+            Live Guard
           </button>
           <button
             onClick={() => setActiveTab("baseline")}
@@ -242,15 +253,15 @@ export function DetectionPage() {
         </div>
       )}
 
-      {/* Tab 2: Rules (20) - Grouped by 4 categories */}
+      {/* Tab 2: Rules (20) - Grouped by categories */}
       {activeTab === "rules" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h3 className="text-[19px] font-semibold text-[var(--text)]">
+              <h3 className="text-[20px] font-semibold text-[var(--text)]">
                 20-Rule Detection Matrix
               </h3>
-              <p className="text-[13px] text-[var(--text-2)]">
+              <p className="text-[14px] text-[var(--text-2)]">
                 Toggle rules or view parameter bounds for behavioral baseline screening and explicit threat rules.
               </p>
             </div>
@@ -258,7 +269,7 @@ export function DetectionPage() {
               placeholder="Search rules..."
               value={ruleSearch}
               onChange={(e) => setRuleSearch(e.target.value)}
-              className="w-48 rounded-full border border-[var(--hairline)]/80 bg-[var(--card)] px-3.5 py-1.5 text-[13px] text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
+              className="w-56 rounded-full border border-[var(--hairline-subtle)] bg-[var(--card)] px-4 py-2 text-[14px] text-[var(--text)] focus:border-[var(--accent)] focus:outline-none"
             />
           </div>
 
@@ -279,36 +290,36 @@ export function DetectionPage() {
               return (
                 <div
                   key={cat.key}
-                  className="rounded-[var(--r-card)] border border-[var(--hairline)]/60 bg-[var(--card)] p-5 shadow-[var(--shadow-1)]"
+                  className="rounded-[var(--r-card)] card p-6 shadow-[var(--shadow-1)] border border-[var(--hairline-subtle)]"
                 >
-                  <div className="mb-3 flex items-center justify-between border-b border-[var(--hairline)]/40 pb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: cat.color }} />
-                      <h4 className="text-[16px] font-semibold text-[var(--text)]">{cat.label}</h4>
-                      <span className="font-mono text-[11px] text-[var(--text-3)]">{cat.code}</span>
+                  <div className="mb-4 flex items-center justify-between border-b border-[var(--hairline-subtle)] pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="h-3 w-3 rounded-full" style={{ background: cat.color }} />
+                      <h4 className="text-[17px] font-semibold text-[var(--text)]">{cat.label}</h4>
+                      <span className="font-mono text-[12px] text-[var(--text-3)]">{cat.code}</span>
                     </div>
-                    <span className="text-[12px] text-[var(--text-3)]">
+                    <span className="text-[13px] text-[var(--text-3)]">
                       {catRules.length} rule(s)
                     </span>
                   </div>
 
-                  <div className="divide-y divide-[var(--hairline)]/30">
+                  <div className="divide-y divide-[var(--hairline-subtle)]">
                     {catRules.map((r) => (
                       <div
                         key={r.rule_id}
-                        className="flex items-center justify-between gap-4 py-3 first:pt-1 last:pb-1"
+                        className="flex items-center justify-between gap-4 py-3.5 first:pt-1 last:pb-1"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-[12px] font-semibold text-[var(--text)]">
+                            <span className="font-mono text-[13px] font-semibold text-[var(--text)]">
                               {r.rule_id}
                             </span>
-                            <span className="text-[14px] font-medium text-[var(--text)]">
+                            <span className="text-[15px] font-medium text-[var(--text)]">
                               {r.name}
                             </span>
                             <Badge value={r.severity} />
                           </div>
-                          <p className="mt-1 text-[13px] text-[var(--text-2)]">{r.description}</p>
+                          <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--text-2)]">{r.description}</p>
                         </div>
 
                         {/* iOS-style toggle */}
@@ -318,7 +329,7 @@ export function DetectionPage() {
                           role="switch"
                           aria-checked={r.enabled}
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                            r.enabled ? "bg-[var(--ok)]" : "bg-black/[0.15] dark:bg-white/[0.2]"
+                            r.enabled ? "bg-[var(--ok)]" : "bg-[var(--card-alt)] border border-[var(--hairline-subtle)]"
                           }`}
                         >
                           <span
@@ -337,7 +348,14 @@ export function DetectionPage() {
         </div>
       )}
 
-      {/* Tab 3: Learned Baseline */}
+      {/* Tab 3: Live Guard */}
+      {activeTab === "liveguard" && (
+        <div className="space-y-6">
+          <LiveGuardCard />
+        </div>
+      )}
+
+      {/* Tab 4: Learned Baseline */}
       {activeTab === "baseline" && (
         <div className="space-y-6">
           <BaselineCard
@@ -350,7 +368,7 @@ export function DetectionPage() {
         </div>
       )}
 
-      {/* Tab 4: Audit Queue */}
+      {/* Tab 5: Audit Queue */}
       {activeTab === "audit" && (
         <ResultViewer
           title="Triage Audit Queue"

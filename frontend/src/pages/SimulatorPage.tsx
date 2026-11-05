@@ -10,7 +10,7 @@ import { Sliders, Copy, Check, Play } from "lucide-react";
 
 // Max 5 columns for pristine table scan without horizontal overflow
 const columns: Column<RawEvent>[] = [
-  { key: "sequence", label: "#", className: "w-14 font-mono text-[13px]" },
+  { key: "sequence", label: "#", className: "w-14 font-mono text-[14px]" },
   {
     key: "event_id",
     label: "Event ID",
@@ -68,6 +68,7 @@ export function SimulatorPage() {
     gateway_mode: "monitor",
     drop_rate: 0,
     agent_backend: "deterministic",
+    agent_mode: "scripted",
     auto_pipeline: false,
     persist: true,
   });
@@ -106,12 +107,20 @@ export function SimulatorPage() {
       }
       setSettingsOpen(false);
       const labels = res.run.labels.malicious_agent_ids.length;
+      const c = res.run.counts;
+      const ai =
+        res.run.agent_mode === "autonomous"
+          ? ` AI decisions: ${c.ai_decisions ?? 0}, fallbacks: ${c.ai_fallbacks ?? 0}, refusals: ${c.ai_refusals ?? 0}, violations: ${c.ai_policy_violations ?? 0}${
+              c.injection_exposed ? `; injection followed ${c.injection_complied ?? 0}/${c.injection_exposed}` : ""
+            }.`
+          : "";
+
       setStatus({
         kind: "success",
         message: (
           <>
             Run <code className="font-mono">{res.run.run_id}</code> emitted {res.events.length} events from {res.agents.length} agents
-            {res.run.dropped_event_ids.length ? ` (${res.run.dropped_event_ids.length} dropped)` : ""}; {labels} labeled malicious agent(s).
+            {res.run.dropped_event_ids.length ? ` (${res.run.dropped_event_ids.length} dropped)` : ""}; {labels} labeled malicious agent(s).{ai}
             {cfg.persist ? (cfg.auto_pipeline ? " Pipeline ran automatically." : " Saved to raw_events.") : " Preview only, not saved."}
           </>
         ),
@@ -129,7 +138,7 @@ export function SimulatorPage() {
       <PageHeader
         module="simulator"
         title="Agent simulator"
-        description="Runs a deterministic multi-agent scenario and emits structured JSON events. Protected tool calls pass through a policy gateway before they execute."
+        description="Runs a multi-agent scenario (scripted, or with each agent's AI deciding) and emits structured JSON events. Protected tool calls pass through a policy gateway before they execute."
       >
         <div className="flex items-center gap-3">
           <button
@@ -224,6 +233,26 @@ export function SimulatorPage() {
             />
           </Field>
 
+          <Field
+            label="Agent mode"
+            asDiv
+            hint={
+              cfg.agent_mode === "autonomous"
+                ? "Each worker's AI decides its own actions; anything it does outside policy is labeled. Needs an AI backend."
+                : "Workers follow fixed normal work; only the attack is scripted."
+            }
+          >
+            <Segmented
+              full
+              value={cfg.agent_mode ?? "scripted"}
+              onChange={(m) => set("agent_mode", m)}
+              options={[
+                { value: "scripted", label: "Scripted" },
+                { value: "autonomous", label: "AI decides" },
+              ]}
+            />
+          </Field>
+
           <Field label="Gateway mode" hint={GATEWAY_HELP[cfg.gateway_mode]}>
             <select
               className={inputCls}
@@ -251,7 +280,14 @@ export function SimulatorPage() {
             />
           </Field>
 
-          <Field label="Agent backend" hint="Only formats messages; never used as detection evidence.">
+          <Field
+            label="Agent backend"
+            hint={
+              cfg.agent_mode === "autonomous"
+                ? "The model that makes each agent's decisions."
+                : "Only formats messages; never used as detection evidence."
+            }
+          >
             <select
               className={inputCls}
               value={cfg.agent_backend}

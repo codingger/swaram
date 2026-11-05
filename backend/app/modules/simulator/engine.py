@@ -1,113 +1,55 @@
-"""Deterministic multi-agent simulator.
+"""Deterministic and autonomous multi-agent simulator with real broker communication and shared environment.
 
 Same (scenario, agent_count, seed, base_time) -> same events, apart from the run id
-that prefixes every agent/event id.
-"""
+
+that prefixes every agent/event id."""
 from __future__ import annotations
 
 import random
+import tempfile
 import uuid
-from datetime import datetime, timedelta
-
+from datetime import datetime
+from pathlib import Path
 from app.adapters import get_adapter
 from app.adapters.base import AgentAdapter
+from app.modules.simulator.broker import BROKER_REGISTRY, MessageBroker
+from app.modules.simulator.environment import ENVIRONMENT_REGISTRY, SharedEnvironment
+from app.modules.simulator.export import export_canonical_jsonl
 from app.modules.simulator.gateway import PolicyGateway
-from app.modules.simulator.world import (
-    ROLE_ORDER,
-    ROLE_OUTPUT,
-    ROLE_PERMISSIONS,
-    ROLE_TOOLS,
-    SCENARIOS_BY_ID,
-    TOPICS,
-)
+from app.modules.simulator.scenarios import SCENARIO_ATTACKS
+from app.modules.simulator.world import ROLE_OUTPUT, ROLE_TOOLS, SCENARIOS_BY_ID, TOPICS
 from app.schemas import Agent, RawEvent, Run, RunLabels, ScenarioConfig, SimulationResult
 from app.timeutil import iso, now_iso, utcnow
 
+# Re-exported so existing `from app.modules.simulator.engine import ...` keeps working.
+from app.modules.simulator.runner import AgentRunner, _make_agents, _first  # noqa: F401
+from app.modules.simulator.codework import _clean_json_or_text, _extract_code_block, _extract_solution_and_tests, _validate_python_syntax, _audit_code_implementation, _generate_deterministic_solution  # noqa: F401
+from app.modules.simulator.sandbox import CODE_EXEC_FLAG, _code_exec_allowed, _child_env, _execute_code_safely  # noqa: F401
+from app.modules.simulator.collaboration import _autonomous_user_task_collaboration  # noqa: F401
+from app.modules.simulator.autonomous import autonomous_round
+
+
 ROUNDS = 2
-
-
-class AgentRunner:
-    """Executes agent actions, routing protected ones through the gateway first."""
-
-    def __init__(self, run_id: str, run_hex: str, base_time: datetime, rng: random.Random, gateway: PolicyGateway, adapter: AgentAdapter):
-        self.run_id = run_id
-        self.run_hex = run_hex
-        self.clock = base_time
-        self.rng = rng
-        self.gateway = gateway
-        self.adapter = adapter
-        self.events: list[RawEvent] = []
-        self.malicious_event_ids: list[str] = []
-
-    def emit(self, agent: Agent, event_type: str, action: str, *, status: str = "success", target: str | None = None,
-             resource: str | None = None, gateway_decision: str | None = None, payload: dict | None = None,
-             malicious: bool = False) -> RawEvent:
-        self.clock += timedelta(milliseconds=self.rng.randint(400, 2500))
-        seq = len(self.events) + 1
-        event = RawEvent(
-            run_id=self.run_id,
-            event_id=f"evt-{self.run_hex}-{seq:04d}",
-            agent_id=agent.agent_id,
-            timestamp=iso(self.clock),
-            event_type=event_type,
-            action=action,
-            status=status,
-            target=target,
-            resource=resource,
-            sequence=seq,
-            gateway_decision=gateway_decision,
-            payload=payload or {},
-        )
-        self.events.append(event)
-        if malicious:
-            self.malicious_event_ids.append(event.event_id)
-        return event
-
-    def protected(self, agent: Agent, event_type: str, action: str, *, resource: str | None = None,
-                  target: str | None = None, payload: dict | None = None, malicious: bool = False) -> bool:
-        """Check policy BEFORE executing. Returns True if the tool actually ran."""
-        check = self.gateway.check(agent, resource=resource, target=target)
-        payload = dict(payload or {})
-        if check.decision != "not_checked":
-            payload["gateway_reason"] = check.reason
-        self.emit(agent, event_type, action, status="denied" if not check.executes else "success",
-                  target=target, resource=resource, gateway_decision=check.decision, payload=payload, malicious=malicious)
-        return check.executes
-
-    def access(self, agent: Agent, resource: str, action: str = "read", malicious: bool = False) -> bool:
-        return self.protected(agent, "resource_access", action, resource=resource, malicious=malicious)
-
-    def message(self, sender: Agent, recipient: Agent, intent: str, topic: str, *, data_ref: str | None = None,
-                malicious: bool = False) -> None:
-        payload = {"intent": intent, "topic": topic,
-                   "content": self.adapter.compose_message(sender.role, recipient.role, intent, topic)}
-        if data_ref:
-            payload["data_ref"] = data_ref
-        self.emit(sender, "message", "send", target=recipient.agent_id, payload=payload, malicious=malicious)
-
-
-def _make_agents(run_id: str, run_hex: str, count: int) -> list[Agent]:
-    agents = []
-    for i in range(count):
-        role = ROLE_ORDER[i % len(ROLE_ORDER)]
-        agents.append(Agent(
-            agent_id=f"agt-{run_hex}-{i + 1:02d}",
-            run_id=run_id,
-            name=f"{role.title()} {i // len(ROLE_ORDER) + 1}",
-            role=role,
-            permissions=list(ROLE_PERMISSIONS[role]),
-        ))
-    return agents
-
-
-def _first(agents: list[Agent], role: str) -> Agent | None:
-    return next((a for a in agents if a.role == role), None)
 
 
 def _normal_round(r: AgentRunner, agents: list[Agent], round_no: int) -> None:
     planner, workers = agents[0], agents[1:]
     for w in workers:
         r.message(planner, w, "assign_task", r.rng.choice(TOPICS))
+        received_events = r.receive_messages(w)
+        # Update simulated agent perceptions
+        w_sim = r.sim_agents_by_id.get(w.agent_id)
+        if w_sim:
+            for rev in received_events:
+                w_sim.perceive({
+                    "type": "message_received",
+                    "sender_id": rev.payload.get("sender_id"),
+                    "intent": rev.payload.get("intent"),
+                    "topic": rev.payload.get("topic"),
+                    "content": rev.payload.get("content"),
+                    "data_ref": rev.payload.get("data_ref"),
+                })
+                w_sim.memory.add_pending_task(rev.payload)
     for w in workers:
         topic = r.rng.choice(TOPICS)
         r.emit(w, "task", "start", payload={"round": round_no, "topic": topic})
@@ -123,63 +65,68 @@ def _normal_round(r: AgentRunner, agents: list[Agent], round_no: int) -> None:
         if len(workers) > 1 and r.rng.random() < 0.3:
             peer = r.rng.choice([x for x in workers if x is not w])
             r.message(w, peer, "share_notes", topic)
+            r.receive_messages(peer)
         r.message(w, planner, "report", topic)
+        r.receive_messages(planner)
         r.emit(w, "task", "complete", payload={"round": round_no, "topic": topic})
 
 
-def _unauthorized_access(r: AgentRunner, agents: list[Agent]) -> list[Agent]:
-    attacker = _first(agents, "coder")
-    if attacker is None:
-        return []
-    r.emit(attacker, "tool_call", "run", resource="tool/shell", payload={"command": "ls secrets/"}, malicious=True)
-    r.access(attacker, "secrets/api_keys", "read", malicious=True)
-    r.access(attacker, "data/customer_pii", "read", malicious=True)
-    r.access(attacker, "secrets/api_keys", "read", malicious=True)
-    return [attacker]
+ATTACKS = SCENARIO_ATTACKS
 
 
-def _coordinated_leakage(r: AgentRunner, agents: list[Agent]) -> list[Agent]:
-    insider, exfil = _first(agents, "analyst"), _first(agents, "coder")
-    if insider is None or exfil is None:
-        return []
-    relay = _first(agents, "researcher") if len(agents) >= 10 else None
-    chain = [insider] + ([relay] if relay else []) + [exfil]
-    r.access(insider, "data/customer_pii", "read", malicious=True)
-    for sender, recipient in zip(chain, chain[1:]):
-        r.message(sender, recipient, "handoff", "customer-extract", data_ref="data/customer_pii", malicious=True)
-    r.emit(exfil, "tool_call", "run", resource="tool/compress", payload={"file": "extract.zip"}, malicious=True)
-    r.protected(exfil, "data_transfer", "upload", resource="data/customer_pii", target="external:paste-site", malicious=True)
-    return chain
-
-
-ATTACKS = {
-    "normal_collaboration": lambda r, agents: [],
-    "unauthorized_access": _unauthorized_access,
-    "coordinated_leakage": _coordinated_leakage,
-}
-
-
-def run_simulation(config: ScenarioConfig, *, run_id: str | None = None, base_time: datetime | None = None,
-                   adapter: AgentAdapter | None = None) -> SimulationResult:
+def run_simulation(
+    config: ScenarioConfig,
+    *,
+    run_id: str | None = None,
+    base_time: datetime | None = None,
+    adapter: AgentAdapter | None = None,
+    broker: MessageBroker | None = None,
+    env: SharedEnvironment | None = None,
+    live=None,
+) -> SimulationResult:
     if config.scenario_id not in SCENARIOS_BY_ID:
         raise ValueError(f"Unknown scenario: {config.scenario_id}")
     run_hex = run_id.removeprefix("run-") if run_id else uuid.uuid4().hex[:8]
     run_id = f"run-{run_hex}"
     base_time = base_time or utcnow().replace(microsecond=0)
     rng = random.Random(config.seed)
-
     agents = _make_agents(run_id, run_hex, config.agent_count)
-    runner = AgentRunner(run_id, run_hex, base_time, rng, PolicyGateway(config.gateway_mode),
-                         adapter or get_adapter(config.agent_backend))
-
-    _normal_round(runner, agents, 1)
-    malicious_agents = ATTACKS[config.scenario_id](runner, agents)
-    _normal_round(runner, agents, 2)
-
-    malicious_ids = {a.agent_id for a in malicious_agents}
-    for a in agents:
-        a.is_malicious = a.agent_id in malicious_ids
-
+    if live:
+        live.start(run_id, agents)
+    workspace_dir = config.workspace_dir or (Path(tempfile.gettempdir()) / "swarmguard-runs" / run_id / "workspace" if (config.user_task or config.scenario_id == "user_directed") else None)
+    active_env = env or ENVIRONMENT_REGISTRY.create(run_id, gateway_mode=config.gateway_mode, workspace_dir=workspace_dir)
+    active_broker = broker or BROKER_REGISTRY.create(run_id)
+    active_broker.register_agents(a.agent_id for a in agents)
+    active_env.broker = active_broker
+    active_env.gateway = PolicyGateway(config.gateway_mode)
+    runner = AgentRunner(
+        run_id,
+        run_hex,
+        base_time,
+        rng,
+        active_env.gateway,
+        adapter or get_adapter(config.agent_backend),
+        broker=active_broker,
+        env=active_env,
+        live=live,
+    )
+    runner.register_agents(agents)
+    if config.user_task or config.scenario_id == "user_directed":
+        task_text = config.user_task or "Collaboratively design and implement a secure data pipeline."
+        _autonomous_user_task_collaboration(runner, agents, task_text)
+        malicious_ids = set()
+    else:
+        work_round = autonomous_round if config.agent_mode == "autonomous" else _normal_round
+        work_round(runner, agents, 1)
+        attack_fn = ATTACKS.get(config.scenario_id, lambda r, agts: [])
+        malicious_agents = attack_fn(runner, agents)
+        work_round(runner, agents, 2)
+        malicious_ids = {a.agent_id for a in malicious_agents}
+        stats = getattr(runner, "ai_stats", None)
+        if stats is not None:  # outcome-based labels: an AI agent that broke policy is a culprit, whatever made it
+            malicious_ids |= stats.violators
+        for a in agents:
+            a.is_malicious = a.agent_id in malicious_ids
     events, dropped = runner.events, []
     if config.drop_rate > 0:
         drop_rng = random.Random(config.seed * 7919 + 1)
@@ -187,7 +134,6 @@ def run_simulation(config: ScenarioConfig, *, run_id: str | None = None, base_ti
         for e in events:
             (dropped if drop_rng.random() < config.drop_rate else kept).append(e)
         events, dropped = kept, [e.event_id for e in dropped]
-
     run = Run(
         run_id=run_id,
         scenario_id=config.scenario_id,
@@ -196,11 +142,23 @@ def run_simulation(config: ScenarioConfig, *, run_id: str | None = None, base_ti
         gateway_mode=config.gateway_mode,
         drop_rate=config.drop_rate,
         agent_backend=config.agent_backend,
+        agent_mode=config.agent_mode,
         created_at=now_iso(),
         base_time=iso(base_time),
         stages={"simulated": now_iso()},
-        counts={"agents": len(agents), "raw_events": len(events), "dropped_events": len(dropped)},
+        counts={"agents": len(agents), "raw_events": len(events), "dropped_events": len(dropped),
+                **(runner.ai_stats.counts() if hasattr(runner, "ai_stats") else {})},
         labels=RunLabels(malicious_agent_ids=sorted(malicious_ids), malicious_event_ids=runner.malicious_event_ids),
         dropped_event_ids=dropped,
     )
     return SimulationResult(run=run, agents=agents, events=events)
+
+
+def export_events_jsonl(
+    sim_or_events: SimulationResult | list[RawEvent],
+    destination: Path | str | None = None,
+    *,
+    schema_version: str = "1.0",
+) -> str:
+    """Convenience helper to export canonical 12-field JSONL for SwarmGuard."""
+    return export_canonical_jsonl(sim_or_events, destination, schema_version=schema_version)

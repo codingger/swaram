@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.module_info import MODULES, module_info
 from app.modules.simulator.world import SCENARIOS
 from app.schemas import (
-    AGENT_COUNTS, BaselineTrainRequest, CollectRequest, DetectionRule, DetectRequest, EvaluateRequest, RespondRequest, ResponsePolicy,
+    AGENT_COUNTS, BaselineTrainRequest, CollectRequest, ReplayRequest, DetectionRule, DetectRequest, EvaluateRequest, RespondRequest, ResponsePolicy,
     ScenarioConfig, SuiteRequest,
 )
 from app.services.pipeline import NotFound, Pipeline
@@ -126,6 +126,9 @@ def run_pipeline(run_id: str, p: Pipeline = P):
 # ------------------------------------------------------------------ modules
 @app.post("/api/simulate")
 def simulate(config: ScenarioConfig, p: Pipeline = P):
+    if config.workspace_dir:
+        # Agents write files into the workspace; only local scripts may choose where that is on disk.
+        raise HTTPException(400, "workspace_dir can't be set through the API")
     return p.simulate(config)
 
 
@@ -151,6 +154,26 @@ def run_assessments(run_id: str, p: Pipeline = P):
 def run_audit_queue(run_id: str, p: Pipeline = P):
     """Risk-ranked sample of actions for human / trusted-model review (not alerts)."""
     return p.audit_queue(run_id)
+
+
+@app.get("/api/runs/{run_id}/live-report")
+def run_live_report(run_id: str, p: Pipeline = P):
+    """What the live guard saw and stopped while the run was happening."""
+    return p.live_report(run_id)
+
+
+@app.get("/api/detection/replay-cases")
+def replay_cases():
+    """The 26 labeled attacks and 12 benign look-alikes that can be replayed into a live run."""
+    from app.modules.detection.benchmark import case_catalog
+
+    return case_catalog()
+
+
+@app.post("/api/detection/replay")
+def replay(req: ReplayRequest, p: Pipeline = P):
+    """Plant one case into a fresh realistic run, stream it through the live guard, save it and run the pipeline."""
+    return p.replay(req)
 
 
 @app.post("/api/detection/benchmark")

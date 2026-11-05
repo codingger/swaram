@@ -15,24 +15,33 @@ export interface GraphViewProps {
   height?: number;
   onSelectNode?: (nodeId: string) => void;
   selectedNodeId?: string | null;
+  alertEventIds?: Set<string> | string[];
 }
 
 /**
  * 1280px wide Apple-style circular agent graph.
  * 56px node circles, role initials, hairline edges,
- * animated red dashes for suspicious paths, and dashed lines for hidden channels.
+ * animated red dashes ONLY for alert evidence paths,
+ * approved destinations get neutral edge and neutral node outline.
  */
 export function GraphView({
   graph,
   height = 520,
   onSelectNode,
   selectedNodeId,
+  alertEventIds,
 }: GraphViewProps) {
   const [hover, setHover] = useState<string | null>(null);
 
   if (!graph || graph.nodes.length === 0) {
     return <Empty>No agent graph available. Run detection on this run to construct the communication topology.</Empty>;
   }
+
+  const alertEventSet = new Set(
+    alertEventIds instanceof Set
+      ? alertEventIds
+      : alertEventIds ?? []
+  );
 
   const W = 1000;
   const H = height;
@@ -155,7 +164,8 @@ export function GraphView({
             const mx = (x1 + x2) / 2 - (dy / len) * 16;
             const my = (y1 + y2) / 2 + (dx / len) * 16;
 
-            const isSuspicious = e.kind === "data_transfer";
+            // Only color edge red if its event_ids appear in alert evidence
+            const isSuspicious = e.event_ids && e.event_ids.some((id) => alertEventSet.has(id));
             const isHidden = e.kind === "indirect";
             const dim = hover && e.source !== hover && e.target !== hover;
 
@@ -184,13 +194,13 @@ export function GraphView({
                 fill="none"
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
-                strokeOpacity={dim ? 0.15 : isSuspicious ? 1 : 0.8}
+                strokeOpacity={dim ? 0.15 : isSuspicious ? 1 : 0.7}
                 strokeLinecap="round"
                 strokeDasharray={isHidden ? "5 4" : undefined}
                 className={className}
                 markerEnd={marker}
               >
-                <title>{`${e.source} → ${e.target}: ${e.count} ${e.kind}(s)`}</title>
+                <title>{`${e.source} → ${e.target}: ${e.count} ${e.kind}(s)${isSuspicious ? " [ALERT EVIDENCE]" : ""}`}</title>
               </path>
             );
           })}
@@ -204,6 +214,13 @@ export function GraphView({
             const label = ext ? n.id.replace(/^external:/, "") : n.id.split("-").pop() || n.id;
             const roleInitial = ext ? "EXT" : getRoleInitial(n.role, n.id);
             const roleColor = ROLE_COLOR[n.role ?? ""] ?? "var(--text-3)";
+
+            // Approved destinations get a neutral outline; only suspicious external sinks get red
+            const isSuspiciousExternal =
+              ext &&
+              graph.edges.some(
+                (e) => e.target === n.id && e.event_ids.some((id) => alertEventSet.has(id))
+              );
 
             return (
               <g
@@ -244,9 +261,9 @@ export function GraphView({
                     height={48}
                     rx={12}
                     fill="var(--card)"
-                    stroke="var(--crit)"
-                    strokeWidth={2}
-                    className="drop-shadow-sm"
+                    stroke={isSuspiciousExternal ? "var(--crit)" : "var(--hairline-subtle)"}
+                    strokeWidth={isSuspiciousExternal ? 2.5 : 1.5}
+                    className="drop-shadow-xs"
                   />
                 ) : (
                   <circle
@@ -258,13 +275,13 @@ export function GraphView({
                   />
                 )}
 
-                {/* Role Initial in Center (56px circle) */}
+                {/* Role Initial in Center (56px circle or 48px square) */}
                 <text
                   y={ext ? 4 : 5}
                   textAnchor="middle"
                   fontSize={ext ? "11" : "16"}
                   fontWeight="600"
-                  fill={ext ? "var(--crit)" : "#ffffff"}
+                  fill={ext ? (isSuspiciousExternal ? "var(--crit)" : "var(--text-2)") : "#ffffff"}
                   className="pointer-events-none select-none tracking-tight"
                 >
                   {roleInitial}
@@ -276,7 +293,7 @@ export function GraphView({
                   textAnchor="middle"
                   fontSize="14"
                   fontWeight="600"
-                  fill="var(--text)"
+                  fill={ext && !isSuspiciousExternal ? "var(--text-2)" : "var(--text)"}
                   className="pointer-events-none select-none"
                 >
                   {ext ? label : `agent ${label}`}
@@ -289,14 +306,14 @@ export function GraphView({
                     textAnchor="middle"
                     fontSize="12"
                     fill="var(--text-2)"
-                    className="pointer-events-none select-none"
+                    className="pointer-events-none select-none capitalize"
                   >
                     {n.role}
                   </text>
                 )}
 
                 <title>
-                  {`${n.id}${n.role ? ` (${n.role})` : ""}\nEvents: ${n.event_count}\nDegree: ${n.degree_centrality}\nBetweenness: ${n.betweenness}${n.flagged ? "\nSTATUS: FLAGGED" : ""}`}
+                  {`${n.id}${n.role ? ` (${n.role})` : ""}\nEvents: ${n.event_count}\nDegree: ${n.degree_centrality}\nBetweenness: ${n.betweenness}${n.flagged ? "\nSTATUS: FLAGGED" : ""}${isSuspiciousExternal ? "\nSTATUS: SUSPICIOUS SINK" : ext ? "\nSTATUS: APPROVED DESTINATION" : ""}`}
                 </title>
               </g>
             );
@@ -304,8 +321,8 @@ export function GraphView({
         </svg>
       </div>
 
-      {/* Single-line Apple-style Legend */}
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 border-t border-[var(--hairline)]/40 pt-3 text-[13px] text-[var(--text-2)]">
+      {/* Legend below graph */}
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] text-[var(--text-2)]">
         {Object.entries(ROLE_COLOR).map(([r, c]) => (
           <span key={r} className="inline-flex items-center gap-1.5 capitalize">
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} />
@@ -313,16 +330,16 @@ export function GraphView({
           </span>
         ))}
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full border-2 border-[var(--crit)] bg-[var(--crit-bg)]" />
+          <span className="h-2.5 w-2.5 rounded-full ring-2 ring-[var(--crit)] ring-offset-1" />
           Flagged agent
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-1 w-4 rounded-full bg-[var(--crit)]" />
-          Data transfer (suspicious)
+          <span className="h-0.5 w-4 rounded-full bg-[var(--crit)]" />
+          Suspicious data transfer (alert evidence)
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-4 border-t-2 border-dashed border-[var(--accent)]" />
-          Hidden / indirect channel
+          <span className="h-0.5 w-4 rounded-full bg-[var(--hairline)]" />
+          Approved / normal connection
         </span>
       </div>
     </div>

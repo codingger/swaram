@@ -47,8 +47,15 @@ class ScenarioConfig(BaseModel):
     gateway_mode: GatewayMode = "monitor"
     drop_rate: float = Field(0.0, ge=0.0, le=0.9, description="Fraction of events to drop (missing-data tests)")
     agent_backend: str = Field("deterministic", description="Adapter that writes message text")
+    agent_mode: Literal["scripted", "autonomous"] = Field(
+        "scripted", description="scripted: fixed normal work; autonomous: each worker's model decides its actions")
     auto_pipeline: bool = Field(False, description="Run collect -> detect -> respond automatically")
+    live_guard: Literal["off", "detect", "contain"] = Field(
+        "off", description="Stream every event to Threat Detection as it happens; 'contain' also pauses risky agents")
+    pause_at: float = Field(0.6, ge=0.2, le=0.99, description="Risk at which live containment pauses an agent")
     persist: bool = True
+    user_task: Optional[str] = Field(None, description="User-provided task description for autonomous collaboration")
+    workspace_dir: Optional[str] = Field(None, description="Path to persistent workspace directory on disk")
 
 
 class Agent(BaseModel):
@@ -89,6 +96,7 @@ class Run(BaseModel):
     gateway_mode: GatewayMode
     drop_rate: float
     agent_backend: str
+    agent_mode: str = "scripted"
     created_at: str
     base_time: str
     stages: dict[str, str] = Field(default_factory=dict)  # stage -> completed_at
@@ -101,6 +109,7 @@ class SimulationResult(BaseModel):
     run: Run
     agents: list[Agent]
     events: list[RawEvent]
+    live_report: Optional["LiveReport"] = None
 
 
 # ---------------------------------------------------------------------------
@@ -269,9 +278,57 @@ class DetectionResult(BaseModel):
     assessments: list[AgentAssessment] = Field(default_factory=list)
 
 
+class LiveDetection(BaseModel):
+    """First moment a finding appeared while the run was still going."""
+
+    sequence: int
+    timestamp: str
+    event_id: str  # the event whose arrival produced the finding
+    rule_id: str
+    rule_name: str
+    severity: Severity
+    agent_ids: list[str]
+    reason: str
+
+
+class Containment(BaseModel):
+    agent_id: str
+    role: Optional[str] = None
+    scope: Literal["agent", "egress"] = "agent"  # agent = all actions paused; egress = only outbound transfers held
+    paused_at_sequence: int
+    paused_at: str
+    risk: float
+    explanation: Optional[str] = None
+    blocked_actions: int = 0
+    trigger: Optional[str] = None  # risk | hijack_tripwire (blocked before its first harmful action) | need_to_know
+
+
+class LiveReport(BaseModel):
+    run_id: str
+    mode: Literal["detect", "contain"]
+    pause_at: float
+    events_processed: int
+    detections: list[LiveDetection]
+    containment: list[Containment]
+    metrics: dict[str, Any]
+    created_at: str
+
+
+class ReplayRequest(BaseModel):
+    """Plant one labeled attack (or benign look-alike) from the benchmark into a realistic run, live."""
+
+    case: str
+    agent_count: Literal[5, 10, 20] = 5
+    seed: int = 7
+    live_guard: Literal["off", "detect", "contain"] = "contain"
+    pause_at: float = Field(0.6, ge=0.2, le=0.99)
+
+
 class BaselineTrainRequest(BaseModel):
     source: Literal["synthetic", "run"] = "synthetic"
     run_id: Optional[str] = Field(None, description="With source=run: a run confirmed clean to fold into the baseline")
+    confirm_clean: bool = Field(False, description="With source=run: a reviewer confirms this run's alerts were false "
+                                "positives, so it may be learned anyway (e.g. the first runs of a new kind of agent)")
 
 
 # ---------------------------------------------------------------------------
@@ -385,3 +442,6 @@ class Dashboard(BaseModel):
     timeline: list[dict[str, Any]]
     flagged_agents: list[dict[str, Any]]
     evaluation: Optional[EvaluationResult] = None
+
+
+SimulationResult.model_rebuild()  # resolves the forward reference to LiveReport

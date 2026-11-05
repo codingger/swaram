@@ -80,7 +80,7 @@ export function ResultViewer<T extends object>({
                 setQuery(e.target.value);
                 setLimit(PAGE);
               }}
-              className="w-36 rounded-full border border-[var(--hairline)]/80 bg-[var(--card-alt)] py-1.5 pl-8 pr-3 text-[13px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--accent)] focus:bg-[var(--card)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
+              className="w-36 rounded-full card-subtle py-1.5 pl-8 pr-3 text-[14px] text-[var(--text)] placeholder:text-[var(--text-3)] focus:border-[var(--accent)] focus:bg-[var(--card)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20"
             />
           </div>
           <Segmented

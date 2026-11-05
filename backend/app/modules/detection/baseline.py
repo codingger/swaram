@@ -19,17 +19,32 @@ from app.schemas import Agent, NormalizedEvent
 RARE_P = 0.1  # behaviors seen in >= 10% of same-role agents are "normal"
 
 
+def is_send(e: NormalizedEvent) -> bool:
+    """A message the agent SENT. Inbox reads ('receive': agent = recipient, target = sender) are not hand-offs."""
+    return e.event_type == "message" and e.action != "receive"
+
+
+def scope(resource: str | None) -> str | None:
+    """A resource's area: its first two path levels ('repo/src/auth.py' -> 'repo/src').
+
+    Model-driven agents name individual files; the policy and the baseline reason about areas.
+    """
+    return "/".join(resource.split("/")[:2]) if resource and "/" in resource else resource
+
+
 def behavior_key(e: NormalizedEvent) -> str:
     """Structured description of what an agent did. Free text is never used."""
+    if e.event_type == "message" and e.action == "receive":
+        return "message:receive"
     if e.event_type == "message":
         ref = e.payload.get("data_ref")
         return f"message:send{f':data_ref={ref}' if ref else ''}"
     if e.event_type == "data_transfer":
-        return f"data_transfer:{e.action}:{e.resource}->{e.target}"
+        return f"data_transfer:{e.action}:{scope(e.resource)}->{e.target}"
     if e.event_type == "resource_access":
-        return f"resource_access:{e.action}:{e.resource}"
+        return f"resource_access:{e.action}:{scope(e.resource)}"
     if e.event_type == "tool_call":
-        return f"tool_call:{e.resource or e.action}"
+        return f"tool_call:{scope(e.resource) or e.action}"
     return f"{e.event_type}:{e.action}"
 
 
@@ -43,11 +58,14 @@ def agent_behaviors(events: list[NormalizedEvent]) -> dict[str, dict[str, list[s
     return out
 
 
-PROFILE_VERSION = 3  # v2: "pairs" (who messages whom); v3: "msg_stats" (message length per role)
+# v2: "pairs"; v3: "msg_stats"; v4: "identities" (per-agent history);
+# v5: inbox reads keyed as message:receive + member 1's simulator, so baselines saved before must retrain.
+# v6: resources keyed by area (scope()) so AI agents naming individual files aren't "never seen before".
+PROFILE_VERSION = 6
 
 
 def empty_profile() -> dict:
-    return {"version": PROFILE_VERSION, "roles": {}, "pairs": {}, "msg_stats": {}, "runs_learned": 0}
+    return {"version": PROFILE_VERSION, "roles": {}, "pairs": {}, "msg_stats": {}, "identities": {}, "runs_learned": 0}
 
 
 def message_length_limit(profile: dict, role: str | None, sigmas: float = 4.0, floor: float = 20.0) -> float | None:
@@ -91,19 +109,81 @@ def learn(profile: dict | None, events: list[NormalizedEvent], agents: list[Agen
     pairs = profile.setdefault("pairs", {})
     stats = profile.setdefault("msg_stats", {})
     for e in events:
-        if e.event_type == "message" and e.agent_id in roles and e.target in roles:
+        if is_send(e) and e.agent_id in roles and e.target in roles:
             key = f"{roles[e.agent_id]}->{roles[e.target]}"
             pairs[key] = pairs.get(key, 0) + 1
-        if e.event_type == "message" and e.agent_id in roles and e.payload.get("content"):
+        if is_send(e) and e.agent_id in roles and e.payload.get("content"):
             s = stats.setdefault(roles[e.agent_id], {"n": 0, "mean": 0.0, "m2": 0.0})
             x = float(len(str(e.payload["content"])))  # Welford's running mean/variance
             s["n"] += 1
             delta = x - s["mean"]
             s["mean"] += delta / s["n"]
             s["m2"] += delta * (x - s["mean"])
+    _learn_identities(profile, events, agents, seen)
     profile["version"] = PROFILE_VERSION
     profile["runs_learned"] += 1
     return profile
+
+
+# ---------------------------------------------------------------- per-agent (identity) history
+# An identity is an agent's stable name ("Analyst 1"); run-scoped agent ids change every run. In production this
+# should be the agent's durable identity (service account, deployment name).
+
+def identity_of(agent: Agent) -> str:
+    return agent.name
+
+
+def _learn_identities(profile: dict, events: list[NormalizedEvent], agents: list[Agent], seen: dict) -> None:
+    identities = profile.setdefault("identities", {})
+    names = {a.agent_id: identity_of(a) for a in agents}
+    peers: dict[str, set[str]] = defaultdict(set)
+    for e in events:
+        if is_send(e) and e.agent_id in names and e.target in names:
+            peers[e.agent_id].add(names[e.target])
+    for a in agents:
+        ident = identities.setdefault(identity_of(a), {"role": a.role, "runs": 0, "behaviors": {}, "peers": {}})
+        ident["runs"] += 1
+        for b, ids in seen.get(a.agent_id, {}).items():
+            s = ident["behaviors"].setdefault(b, {"runs": 0, "sum": 0, "sumsq": 0})
+            s["runs"] += 1
+            s["sum"] += len(ids)
+            s["sumsq"] += len(ids) ** 2
+        for p in peers.get(a.agent_id, ()):
+            ident["peers"][p] = ident["peers"].get(p, 0) + 1
+
+
+def is_sensitive(behavior: str, restricted: set[str], prefixes: list[str]) -> bool:
+    """Behaviors where 'new for this agent' matters: restricted data, outbound transfers, hand-offs, control plane."""
+    if behavior.startswith("data_transfer:") or "data_ref=" in behavior:
+        return True
+    target = behavior.split(":", 2)[-1]
+    return target in restricted or any(target.startswith(p) for p in prefixes)
+
+
+def identity_drift(profile: dict, agent: Agent, behaviors: dict[str, list[str]], peers: set[str], *, restricted: set[str],
+                   prefixes: list[str], min_runs: int = 5, novel_p: float = 0.15, sigmas: float = 3.0) -> dict | None:
+    """How this run's behavior departs from this agent's OWN history. None if there is not enough history."""
+    ident = profile.get("identities", {}).get(identity_of(agent))
+    if not ident or ident["runs"] < min_runs or ident["role"] != agent.role:
+        return None
+    runs = ident["runs"]
+    novel, spikes = [], []
+    for b, ids in sorted(behaviors.items()):
+        h = ident["behaviors"].get(b, {"runs": 0, "sum": 0, "sumsq": 0})
+        p_self = (h["runs"] + 1) / (runs + 2)
+        role_p = probability(profile, agent.role, b)
+        if p_self < novel_p and is_sensitive(b, restricted, prefixes) and (role_p is None or role_p >= RARE_P):
+            # New for THIS agent but normal for its role (role-rare behavior is SG-004's job).
+            novel.append({"behavior": b, "p_self": round(p_self, 3), "history_runs": runs, "event_ids": ids})
+            continue
+        if b.startswith("message:"):
+            continue  # message volume scales with swarm size; runaway messaging is SG-018's job
+        mean = h["sum"] / runs
+        std = max(0.0, h["sumsq"] / runs - mean * mean) ** 0.5
+        if len(ids) >= 3 and len(ids) > mean + sigmas * max(std, 1.0):
+            spikes.append({"behavior": b, "count": len(ids), "usual": round(mean, 2), "history_runs": runs, "event_ids": ids})
+    new_peers = sorted(p for p in peers if p not in ident["peers"])
+    return {"identity": identity_of(agent), "history_runs": runs, "novel": novel, "spikes": spikes, "new_peers": new_peers}
 
 
 def probability(profile: dict, role: str, behavior: str) -> float | None:
@@ -134,5 +214,6 @@ def summary(profile: dict | None) -> dict:
         "runs_learned": profile.get("runs_learned", 0),
         "learned_run_ids": profile.get("learned_run_ids", []),
         "agents_learned": sum(r["agents"] for r in roles.values()),
+        "identities_learned": len(profile.get("identities", {})),
         "roles": {k: {"agents": v["agents"], "behaviors": len(v["behaviors"])} for k, v in sorted(roles.items())},
     }
