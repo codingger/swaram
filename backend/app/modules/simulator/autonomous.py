@@ -263,11 +263,10 @@ def worker_turn(r: AgentRunner, agent: Agent, planner: Agent, agents: list[Agent
             delivered = r.protected(agent, "resource_access", "read", resource=c.resource, payload=payload)
         if delivered:  # quarantined by the live guard: the agent never sees it
             context.append(c)
-            stats.injection_exposed += 1
         else:
             stats.injection_quarantined += 1
     relayed = any(_spreads(r, str(m.get("content"))) for m in inbox)  # a teammate passed planted text on (worm)
-    if relayed:
+    if context or relayed:  # counted per agent turn, however many planted items it read
         stats.injection_exposed += 1
 
     decision, raw = _decide(r, agent, round_no, task, inbox, context)

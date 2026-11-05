@@ -427,3 +427,23 @@ Messages are now gated *before* broker delivery, so a blocked hand-off never rea
 spread agent to agent (`inj_worm`; repeating a planted text's ID to a teammate is labeled as spreading it). An
 untrusted input the live guard quarantines (e.g. an impersonated planner message, SG-026) is never shown to the
 model; `run.counts.injection_quarantined` counts them.
+
+---
+
+## 13. Gemini quota (free tier)
+
+Google's free tier for `gemini-3.5-flash-lite` allows **15 calls/minute and 500 calls/day**, and the daily count resets
+at **midnight US Pacific** (measured Nov 2026). The quota tracker (`adapters/gemini_adapter.py`) now:
+
+- paces calls to the per-minute limit (`GEMINI_MAX_RPM`, default 14) and caps the day at `GEMINI_DAILY_BUDGET`
+  (default 480, just under Google's 500);
+- follows Google's quota day and reset time, and saves usage to `backend/data/gemini_quota.json` so the app and the
+  scripts share one count across restarts (`GEMINI_QUOTA_FILE=off` disables it; tests always do);
+- treats a daily 429 ("requests per day", or a retry hint longer than 10 minutes) as "used up until the reset" instead
+  of retrying every minute.
+
+The app refuses a Gemini-backed run that wouldn't fit (HTTP 400 with what it needs, what's left and when it resets)
+rather than letting it fall back to scripted text part-way. Estimates: AI mode 4 × (agents − 1) calls, scripted
+5 × (agents − 1), user tasks ~40. `GET /api/gemini/quota` returns usage, the reset time and per-run estimates;
+the Simulator page and the Live guard card show a meter and disable Run when a run won't fit. Gemini runs record
+`run.counts.model_calls`.

@@ -58,6 +58,14 @@ def health(p: Pipeline = P) -> dict[str, Any]:
     return {"ok": True, "storage": p.store.backend, "workspace": p.store.workspace}
 
 
+@app.get("/api/gemini/quota")
+def gemini_quota() -> dict[str, Any]:
+    """Gemini calls used today, what's left, when Google resets it, and what a run costs."""
+    from app.services.quota import quota_status
+
+    return quota_status()
+
+
 @app.get("/api/meta")
 def meta() -> dict[str, Any]:
     return {"scenarios": [s.model_dump() for s in SCENARIOS], "agent_counts": list(AGENT_COUNTS),

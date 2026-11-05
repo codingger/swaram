@@ -15,6 +15,7 @@ work because of the quota is recorded as `degraded` and left out of the summary.
 from __future__ import annotations
 
 import json
+import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -34,6 +35,7 @@ DEFAULT_SCENARIOS = [
     "normal_collaboration",
     "inj_phishing_email", "inj_poisoned_web_page", "inj_spoofed_planner",
     "inj_poisoned_ticket", "inj_spoofed_policy", "inj_poisoned_data", "inj_worm",
+    "inj_hard_lookalike", "inj_hard_corroborated", "inj_hard_format", "inj_hard_split", "inj_hard_drill",
     "sg002_external_leak", "sg003_leak_chain", "sg008_privilege_escalation", "sg012_prompt_injection",
 ]
 
@@ -79,7 +81,8 @@ def _quota_left(adapter: AgentAdapter) -> bool:
 
 
 def generate(cfg: BatchConfig, rules: list, *, adapter_factory: Callable[[], AgentAdapter] | None = None,
-             log: Callable[[str], None] = print) -> dict:
+             log: Callable[[str], None] = print, retries: int = 2, retry_wait: float = 60.0,
+             pause: Callable[[float], None] = time.sleep) -> dict:
     """Run (or resume) a batch. `rules` are the detection rules to score with; SG-004's baseline is updated in place."""
     out = Path(cfg.out_dir)
     (out / "events").mkdir(parents=True, exist_ok=True)
@@ -91,15 +94,22 @@ def generate(cfg: BatchConfig, rules: list, *, adapter_factory: Callable[[], Age
 
     # Degraded runs (model unavailable mid-run) are redone on resume.
     done = {(r["phase"], r["scenario_id"], r["seed"]) for r in _read_jsonl(out / "labels.jsonl") if not r["degraded"]}
-    adapter = adapter_factory() if adapter_factory else get_adapter(cfg.backend)
+    # A fresh adapter per run: each adapter carries a per-run spending cap (SWARMGUARD_LLM_MAX_CALLS); sharing one
+    # across the batch silently turned every run after the first few into scripted fallback. The real daily quota is
+    # tracked globally, so it still applies across runs.
+    new_adapter = adapter_factory or (lambda: get_adapter(cfg.backend))
+    adapter = new_adapter()
     todo = [p for p in planned_runs(cfg) if p not in done]
     log(f"{len(done)} run(s) already done, {len(todo)} to go (~{len(todo) * calls_per_run(cfg.agent_count)} model calls)")
 
     stopped = None
-    for phase, scenario, seed in todo:
+    i, attempt = 0, 0
+    while i < len(todo):
+        phase, scenario, seed = todo[i]
         if not _quota_left(adapter):
             stopped = "the model's daily budget is used up; run the same command again later to resume"
             break
+        adapter = new_adapter()
         live = LiveGuard(rules, cfg.live_guard) if cfg.live_guard != "off" and phase == "test" else None
         sim = run_simulation(ScenarioConfig(scenario_id=scenario, agent_count=cfg.agent_count, seed=seed,
                                             gateway_mode=cfg.gateway_mode, agent_mode="autonomous",
@@ -143,8 +153,15 @@ def generate(cfg: BatchConfig, rules: list, *, adapter_factory: Callable[[], Age
                f"{live_metrics['stopped_before_first_harm']}, innocent paused {live_metrics['paused_innocent']}"
                if live_metrics else ""))
         if degraded:
+            # Usually a passing outage (e.g. HTTP 503 "high demand"): wait and redo the same run before giving up.
+            if attempt < retries and _quota_left(adapter):
+                attempt += 1
+                log(f"  model unavailable during this run; retrying in {retry_wait:.0f}s ({attempt}/{retries})")
+                pause(retry_wait)
+                continue
             stopped = "the model stopped answering (quota or outage); run the same command again later to resume"
             break
+        i, attempt = i + 1, 0
 
     summary = summarize(out)
     summary["stopped_early"] = stopped

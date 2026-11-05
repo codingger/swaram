@@ -1,5 +1,5 @@
 import type {
-  Agent, AgentAssessment, Alert, AuditItem, BaselineSummary, BenchmarkResult, LiveReport, ReplayCase, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
+  Agent, AgentAssessment, Alert, AuditItem, BaselineSummary, GeminiQuotaStatus, BenchmarkResult, LiveReport, ReplayCase, CollectionResult, Dashboard, DetectionResult, DetectionRule, EvaluationResult, Meta, ModuleInfo,
   NormalizedEvent, RawEvent, ResponseAction, ResponsePolicy, ResponseResult, Run, ScenarioConfig, SimulationResult,
   SuiteRequest, SuiteResult, AgentGraph,
 } from "./types";
@@ -61,6 +61,7 @@ export const api = {
   replay: (body: { case: string; agent_count: number; seed: number; live_guard: "off" | "detect" | "contain" }) =>
     post<SimulationResult>("/detection/replay", body),
   baseline: () => request<BaselineSummary>("/detection/baseline"),
+  geminiQuota: () => request<GeminiQuotaStatus>("/gemini/quota"),
   benchmark: (full = false) => post<BenchmarkResult>(`/detection/benchmark?full=${full}`, {}),
   trainBaseline: (body: { source: "synthetic" | "run" | "ai"; run_id?: string; confirm_clean?: boolean; runs?: number }) => post<BaselineSummary>("/detection/baseline", body),
   rules: () => request<DetectionRule[]>("/detection-rules"),

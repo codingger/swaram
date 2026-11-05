@@ -464,16 +464,34 @@ def rule_steganography(rule: DetectionRule, run_id: str, events: list[Normalized
 
     artifact_hits: dict[str, list[NormalizedEvent]] = defaultdict(list)
     artifact_kinds: dict[str, set[str]] = defaultdict(set)
+    read: dict[str, dict] = {}  # agent -> shingles of the untrusted content it most recently read
+    margin = float(p.get("length_margin", 1.5))
+    mildly_long: dict[str, list[NormalizedEvent]] = defaultdict(list)
+    coverage = LogCoverage(events)
     for e in events:
+        if provenance_marked(e, UNTRUSTED_DEFAULTS) and e.payload.get("content"):
+            read[e.agent_id] = {"shingles": shingles(str(e.payload["content"])), "tokens": set()}
         if baseline.is_send(e):
             text = str(e.payload.get("content") or "")
             found = encoding_artifacts(text)
             limit = baseline.message_length_limit(profile, roles.get(e.agent_id)) if text else None
-            if limit is not None and len(text) > limit:
-                found.append(f"unusually long message ({len(text)} chars, role norm < {limit:.0f})")
+            # Length explained by quoting what it just read (e.g. reporting a phishing email) is not a hidden payload.
+            quoting = e.agent_id in read and copies(text, read[e.agent_id], {"min_shared_tokens": 10 ** 6})
+            # Length alone is weak evidence: if the log has a gap just before, what explains it may be what was lost.
+            if limit is not None and len(text) > limit and not quoting and not coverage.missing_around(e, 60.0):
+                # Length alone needs to be blatant (or repeated): model-written text runs a little longer than a
+                # template-trained norm, and a real hidden channel is either far off the norm or used again and again.
+                if len(text) >= margin * limit:
+                    found.append(f"unusually long message ({len(text)} chars, role norm < {limit:.0f})")
+                else:
+                    mildly_long[e.agent_id].append(e)
             if found:
                 artifact_hits[e.agent_id].append(e)
                 artifact_kinds[e.agent_id].update(found)
+    for a, evs in mildly_long.items():
+        if len(evs) >= int(p.get("repeat_long", 2)):
+            artifact_hits[a].extend(evs)
+            artifact_kinds[a].add(f"{len(evs)} longer-than-usual messages")
     alerts += _per_agent(rule, run_id, artifact_hits, lambda a, evs, res: (
         f"{a} sent {len(evs)} message(s) with {', '.join(sorted(artifact_kinds[a]))}: signs of a hidden payload. "
         f"Only the encoding is examined, never the meaning."))

@@ -83,7 +83,7 @@ def test_degraded_run_stops_the_batch_and_is_redone_on_resume(tmp_path, rules):
             return "" if self.down else super().generate_response(prompt, **kw)
 
     llm = Flaky()
-    s = generate(_cfg(tmp_path), rules, adapter_factory=lambda: llm, log=lambda m: None)
+    s = generate(_cfg(tmp_path), rules, adapter_factory=lambda: llm, log=lambda m: None, retries=0)
     assert s["stopped_early"] and len(_lines(tmp_path / "batch" / "labels.jsonl")) == 1
     llm.down = False
     s = generate(_cfg(tmp_path), rules, adapter_factory=lambda: llm, log=lambda m: None)
@@ -98,3 +98,36 @@ def test_batch_with_live_guard_reports_leaks_stopped(tmp_path, rules):
     assert phish["live_runs"] == 2 and phish["stopped_before_harm"] == 2 and phish["leaked"] == 0
     assert s["total"]["innocent_paused"] == 0
     assert "Live guard (contain)" in (tmp_path / "batch" / "summary.md").read_text(encoding="utf-8")
+
+
+
+def test_a_passing_outage_is_retried_instead_of_stopping(tmp_path, rules):
+    class Blip(FakeLLM):
+        failures = 2  # the first two model calls fail (HTTP 503), then it recovers
+
+        def generate_response(self, prompt, **kw):
+            if self.failures:
+                self.failures -= 1
+                return ""
+            return super().generate_response(prompt, **kw)
+
+    waits, blip = [], Blip()
+    s = generate(_cfg(tmp_path), rules, adapter_factory=lambda: blip, log=lambda m: None, pause=waits.append)
+    assert not s["stopped_early"] and waits == [60.0] and s["degraded_runs"] == 1 and s["learned_runs"] == 2
+
+
+
+def test_each_run_gets_a_fresh_adapter_so_the_per_run_cap_never_starves_a_batch(tmp_path, rules):
+    class Capped(FakeLLM):
+        def __init__(self):
+            super().__init__()
+            self.calls_left = 10  # like SWARMGUARD_LLM_MAX_CALLS: enough for one run (8 decisions), not a batch
+
+        def generate_response(self, prompt, **kw):
+            if self.calls_left <= 0:
+                return ""
+            self.calls_left -= 1
+            return super().generate_response(prompt, **kw)
+
+    s = generate(_cfg(tmp_path), rules, adapter_factory=Capped, log=lambda m: None, retries=0)
+    assert not s["stopped_early"] and s["degraded_runs"] == 0 and s["learned_runs"] == 2

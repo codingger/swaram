@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import { GeminiQuota } from "../components/GeminiQuota";
 import { Badge, Button, Card, Empty, Field, Segmented, Stat, inputCls } from "../components/ui";
 import { shortId } from "../lib/format";
 import { useAppState, useRunData } from "../state";
@@ -52,6 +53,8 @@ export function LiveGuardCard() {
   const [mode, setMode] = useState<"contain" | "detect">("contain");
   const [gateway, setGateway] = useState<GatewayMode>("monitor");
   const [ai, setAi] = useState(false);
+  const [quotaOk, setQuotaOk] = useState(true);
+  const [runsDone, setRunsDone] = useState(0);
   const gemini = meta?.agent_backends?.find((b) => b.id === "gemini");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +80,7 @@ export function LiveGuardCard() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      setRunsDone((n) => n + 1);
     }
   }
 
@@ -120,9 +124,12 @@ export function LiveGuardCard() {
           </select>
         </Field>
       </div>
+      {ai && !isReplay && (
+        <div className="mt-4 max-w-md"><GeminiQuota agentCount={count} agentMode="autonomous" refreshKey={runsDone} onChange={setQuotaOk} /></div>
+      )}
       <div className="mt-5 flex items-center justify-end gap-3">
         {error && <span className="text-[14px] text-[var(--crit)]">{error}</span>}
-        <Button onClick={run} busy={busy}>Run live</Button>
+        <Button onClick={run} busy={busy} disabled={ai && !isReplay && !quotaOk}>Run live</Button>
       </div>
 
       <div className="mt-6 border-t border-[var(--hairline)]/40 pt-6">

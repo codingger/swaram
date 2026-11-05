@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import { GeminiQuota } from "../components/GeminiQuota";
 import { ResultViewer, type Column } from "../components/ResultViewer";
 import { Badge, Button, Drawer, Field, OutputSelect, PageHeader, Segmented, StatusBanner, inputCls, type Status } from "../components/ui";
 import { ThreatMatrixView } from "../components/ThreatMatrixView";
@@ -75,6 +76,8 @@ export function SimulatorPage() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [runs, setRuns] = useState(0);
+  const [quotaOk, setQuotaOk] = useState(true);
   const [status, setStatus] = useState<Status>(null);
   const [preview, setPreview] = useState<RawEvent[] | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<RawEvent | null>(null);
@@ -129,6 +132,7 @@ export function SimulatorPage() {
       setStatus({ kind: "error", message: (e as Error).message });
     } finally {
       setBusy(false);
+      setRuns((n) => n + 1);
     }
   }
 
@@ -312,6 +316,9 @@ export function SimulatorPage() {
                 </option>
               ))}
             </select>
+            {cfg.agent_backend === "gemini" && (
+              <div className="mt-3"><GeminiQuota agentCount={cfg.agent_count} agentMode={cfg.agent_mode ?? "scripted"} refreshKey={runs} onChange={setQuotaOk} /></div>
+            )}
           </Field>
 
           <OutputSelect
@@ -329,9 +336,15 @@ export function SimulatorPage() {
             />
             Auto-run collect &rarr; detect &rarr; respond &rarr; evaluate
           </label>
-
           <div className="pt-4">
-            <Button variant="primary" onClick={run} busy={busy} className="w-full justify-center">
+            <Button
+              variant="primary"
+              onClick={run}
+              busy={busy}
+              disabled={cfg.agent_backend === "gemini" && !quotaOk}
+              title={cfg.agent_backend === "gemini" && !quotaOk ? "Not enough Gemini quota for this run" : undefined}
+              className="w-full justify-center"
+            >
               Run simulation
             </Button>
           </div>
