@@ -13,7 +13,21 @@ from app.schemas import NormalizedEvent
 from app.timeutil import parse_iso
 
 
+_COVERAGE_CACHE: dict[tuple, "LogCoverage"] = {}
+
+
 class LogCoverage:
+    @classmethod
+    def of(cls, events: list[NormalizedEvent]) -> "LogCoverage":
+        """Shared coverage for one event list: every rule in a detection pass gets the same list object."""
+        key = (id(events), len(events), events[0].event_id if events else None, events[-1].event_id if events else None)
+        hit = _COVERAGE_CACHE.get(key)
+        if hit is None:
+            if len(_COVERAGE_CACHE) > 8:
+                _COVERAGE_CACHE.clear()
+            hit = _COVERAGE_CACHE[key] = cls(events)
+        return hit
+
     def __init__(self, events: list[NormalizedEvent]):
         ordered = sorted((e for e in events if e.sequence > 0), key=lambda e: e.sequence)
         self.seqs = [e.sequence for e in ordered]
