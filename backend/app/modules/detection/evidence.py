@@ -124,7 +124,9 @@ def sensor_match(o: NormalizedEvent, index: dict, tol: float = 30.0) -> Normaliz
     """The agent-log record of the action a sensor saw, if the agent log has it."""
     mid = o.payload.get("message_id")
     for x in index.get((o.agent_id, o.payload.get("mirrors")), []):
-        if (x.action == o.action and x.resource == o.resource and x.target == o.target and _secs_apart(x, o) <= tol
+        # A sensor that can't see a field (e.g. a proxy doesn't know which file was uploaded) matches on the rest.
+        if (x.action == o.action and o.resource in (None, x.resource) and o.target in (None, x.target)
+                and _secs_apart(x, o) <= tol
                 and (not mid or x.payload.get("message_id") == mid)):
             return x
     return None

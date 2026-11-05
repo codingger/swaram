@@ -42,12 +42,13 @@ class IngestSession:
 
     def add(self, raw: dict) -> RawEvent:
         with self.lock:
-            self.seq += 1
+            sensor = raw.get("event_type") == "observation"  # a separate source: it has no place in the agent log's order
+            self.seq += 0 if sensor else 1
             ev = RawEvent.model_validate({
-                "event_id": raw.get("event_id") or f"evt-{self.run_id.removeprefix('run-')}-{self.seq:05d}",
+                "event_id": raw.get("event_id") or f"evt-{self.run_id.removeprefix('run-')}-{self.seq:05d}{'-s' if sensor else ''}",
                 "timestamp": raw.get("timestamp") or now_iso(), "status": raw.get("status") or "success",
                 **{k: v for k, v in raw.items() if k not in ("event_id", "timestamp", "status", "run_id", "sequence")},
-                "run_id": self.run_id, "sequence": self.seq})
+                "run_id": self.run_id, "sequence": 0 if sensor else self.seq})
             self.stream.observe(ev)
         return ev
 

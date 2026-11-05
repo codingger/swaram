@@ -31,6 +31,9 @@ async def lifespan(app: FastAPI):
 
     get_pipeline().seed_defaults()
     notify.install(get_hub())  # opt-in: SWARMGUARD_WEBHOOK_URL
+    from app.services import review
+
+    review.start_escalation_loop(get_store)  # overdue reviews are announced again
     yield
 
 
@@ -235,12 +238,20 @@ def reviews(status: str | None = None, run_id: str | None = None, p: Pipeline = 
     return review.items(p.store, status, run_id)
 
 
+@app.post("/api/reviews/escalate")
+def escalate_reviews(minutes: float = 15.0, p: Pipeline = P) -> list[dict[str, Any]]:
+    """Mark pending reviews older than `minutes` as overdue and announce them (also runs every minute on its own)."""
+    from app.services import review
+
+    return review.escalate(p.store, minutes)
+
+
 @app.post("/api/reviews/{review_id}")
 def decide_review(review_id: str, body: dict[str, Any], p: Pipeline = P) -> dict[str, Any]:
     """{"decision": "release" | "confirm", "note": "..."}"""
     from app.services import review
 
-    return review.decide(p.store, review_id, body.get("decision", ""), body.get("note"))
+    return review.decide(p.store, review_id, body.get("decision", ""), body.get("note"), body.get("by"))
 
 
 @app.get("/api/runs/{run_id}/integrity")

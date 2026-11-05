@@ -63,8 +63,8 @@ export const api = {
   baseline: () => request<BaselineSummary>("/detection/baseline"),
   geminiQuota: () => request<GeminiQuotaStatus>("/gemini/quota"),
   reviews: (status?: string) => request<ReviewItem[]>(`/reviews${status ? `?status=${status}` : ""}`),
-  decideReview: (id: string, decision: "release" | "confirm", note?: string) =>
-    request<ReviewItem>(`/reviews/${id}`, { method: "POST", body: JSON.stringify({ decision, note }) }),
+  decideReview: (id: string, decision: "release" | "confirm", note?: string, by?: string) =>
+    request<ReviewItem>(`/reviews/${id}`, { method: "POST", body: JSON.stringify({ decision, note, by }) }),
   operateAgent: (runId: string, agentId: string, action: "pause" | "hold_egress", note?: string) =>
     request<{ result: string }>(`/live/${runId}/agents/${agentId}`, { method: "POST", body: JSON.stringify({ action, note }) }),
   stopRun: (runId: string, note?: string) =>
