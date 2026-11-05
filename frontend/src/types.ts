@@ -288,6 +288,21 @@ export interface BenchmarkResult {
   cases_info: Record<string, { threat: string; benign: boolean }>;
 }
 
+export interface GeminiQuotaStatus {
+  configured: boolean;
+  model: string;
+  calls_today: number;
+  daily_limit: number;
+  remaining_today: number;
+  rpm_limit: number;
+  calls_last_minute: number;
+  resets_at: string;
+  resets_in_s: number;
+  exhausted: boolean;
+  blocked_reason: string | null;
+  calls_per_run: Record<string, { scripted: number; autonomous: number }>;
+}
+
 export interface BaselineSummary {
   trained: boolean;
   runs_learned: number;

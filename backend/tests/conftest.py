@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+
+os.environ["GEMINI_QUOTA_FILE"] = "off"  # tests must never touch the real Gemini usage file
+
 import json
 from datetime import datetime, timezone
 
