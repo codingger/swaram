@@ -312,3 +312,17 @@ def test_quota_tracker_paces_instead_of_falling_back(monkeypatch):
     assert len(slept) == 1
     tracker.daily_calls_used = 10
     assert tracker.seconds_until_slot() is None  # daily budget spent: never wait
+
+
+
+@pytest.mark.parametrize("msg,seconds", [
+    ("Please retry in 8h3m22.389s.", 8 * 3600 + 3 * 60 + 22.389),
+    ("Please retry in 13.827405338s.", 13.827405338),
+    ("Please retry in 5m.", 300.0),
+    ("no hint here", None),
+])
+def test_retry_hint_is_read_from_429(msg, seconds):
+    from app.adapters.gemini_adapter import retry_after_seconds
+
+    got = retry_after_seconds(msg)
+    assert got == pytest.approx(seconds) if seconds is not None else got is None

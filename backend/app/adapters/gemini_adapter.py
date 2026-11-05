@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 
 import os
+import re
 
 import time
 
@@ -56,6 +57,18 @@ def mask_secret(secret: str | None) -> str:
         return "***"
 
     return f"{secret[:4]}...{secret[-4:]}"
+
+
+_RETRY_RE = re.compile(r"retry in\s+(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?", re.I)
+
+
+def retry_after_seconds(message: str) -> float | None:
+    """Google's hint in a 429 ("Please retry in 8h3m22.4s"), so a spent daily quota isn't retried every minute."""
+    m = _RETRY_RE.search(message or "")
+    if not m or not any(m.groups()):
+        return None
+    h, mins, secs = (float(g) if g else 0.0 for g in m.groups())
+    return h * 3600 + mins * 60 + secs
 
 
 class GeminiQuotaTracker:
@@ -508,8 +521,9 @@ class GeminiAdapter:
                 if last_code == 429 or "RESOURCE_EXHAUSTED" in str(err_msg):
 
                     logger.warning("Gemini HTTP 429 (Rate Limit / Quota Exceeded); triggering quota tracker cooldown: %s", err_msg)
+                    _wait = retry_after_seconds(str(err_msg))
 
-                    self.quota_tracker.record_429()
+                    self.quota_tracker.record_429(_wait or 60.0)
 
                 else:
 
@@ -548,8 +562,9 @@ class GeminiAdapter:
                 if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
 
                     logger.warning("Gemini HTTP 429 rate limit detected; cooling down")
+                    _wait = retry_after_seconds(err_str)
 
-                    self.quota_tracker.record_429()
+                    self.quota_tracker.record_429(_wait or 60.0)
 
                 else:
 
