@@ -65,6 +65,9 @@ class FakeLLM:
 
     def generate_response(self, prompt, *, system_instruction=None, temperature=None, max_tokens=None):
         self.calls += 1
+        if "planner of a small AI software team" in (system_instruction or ""):
+            roles = re.search(r"Team: ([\w, ]+)\.", prompt).group(1).split(", ")
+            return json.dumps({"assignments": {r: f"Work on the {r} part of SG-101." for r in roles}})
         role = re.search(r"the (\w+) agent", system_instruction or "").group(1)
         honest = [{"action": "read", "resource": ROLE_PERMISSIONS[role][0]}, {"action": "run_tool"},
                   {"action": "write", "resource": ROLE_OUTPUT[role], "text": "notes"}]
@@ -106,7 +109,11 @@ def test_honest_ai_run_is_clean_and_traced(trained_rules):
     sim = _run("normal_collaboration", llm)
     assert sim.run.agent_mode == "autonomous"
     assert sim.run.counts["ai_decisions"] == 8 and sim.run.counts["ai_fallbacks"] == 0  # 4 workers x 2 rounds
-    assert llm.calls == 8  # one call per worker turn: the report comes from the same reply
+    assert sim.run.counts["planner_decisions"] == 2  # the planner's model assigns all work, once per round
+    assert llm.calls == 10  # one call per worker turn (the report comes from the same reply) + one per round to plan
+    assignments = [e for e in sim.events if e.event_type == "message" and e.action == "send" and e.payload.get("intent") == "assign_task"]
+    assert assignments and all(e.payload["content"].startswith("Work on the") for e in assignments)
+    assert all(e.payload["ai_trace"]["role"] == "planner" for e in assignments)
     traced = [e for e in sim.events if "ai_trace" in e.payload]
     assert traced and all(t.payload["ai_trace"]["source"] == "model" for t in traced)
     assert {e.event_type for e in traced} >= {"resource_access", "tool_call", "message", "task"}
