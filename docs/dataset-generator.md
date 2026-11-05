@@ -8,6 +8,7 @@ cd backend
 python scripts/generate_dataset.py --dry-run             # plan + model-call estimate
 python scripts/generate_dataset.py --runs 3 --learn 3    # writes ../datasets/<date>/
 python scripts/generate_dataset.py --out ../datasets/night1   # same folder again = resume
+python scripts/generate_dataset.py --live-guard contain   # also stop hijacked agents mid-run
 ```
 
 Needs `GEMINI_API_KEY` in `backend/.env`. The free tier allows 15 calls/min and **500 calls/day** on Flash-Lite
@@ -23,7 +24,7 @@ runs out mid-batch the generator stops; run the same command later and it contin
 | `events/<run_id>.jsonl` | **Data Optimizer (member 2)** | Canonical 12-field events, one file per run. Same contract as before; no labels inside. |
 | `labels.jsonl` | Evaluation | One line per run: scenario, seed, agents (role, permissions), ground-truth culprits and events, AI counts. |
 | `detection.jsonl` | Threat Detection | Alerts per run, agents caught / missed / falsely flagged. |
-| `summary.md` / `summary.json` | Everyone | Hijack rate per attack, recall, precision, false alarms. |
+| `summary.md` / `summary.json` | Everyone | Hijack rate per attack, recall, precision, false alarms; with `--live-guard contain`, runs where data left, attacks stopped before the first harmful action, innocent agents paused. |
 | `baseline_profile.json` | Threat Detection | Baseline after learning the batch's clean runs. |
 
 **Only new thing in the events:** `details.ai_trace` on events an agent's model caused:

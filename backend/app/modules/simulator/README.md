@@ -415,3 +415,9 @@ Code: `autonomous.py` (decision loop, policy labels, trace), `injections.py` (th
 Takeaway: the model holds the line on *external* destinations (it quotes the allowlist) but trusts an unverified
 "planner" message enough to share restricted data internally. Detection only links that hand-off to the injection
 because `out_of_policy` now counts handing restricted data to a teammate without permission.
+
+**Live guard on AI runs.** With `live_guard="contain"` (Live guard card: *Driven by → AI decides*), every
+model-chosen action is checked before it runs. The guard tracks which agents just ingested untrusted content
+(SG-012's window); if such an agent attempts an out-of-policy action, that action is denied before execution
+and the agent is paused (`Containment.trigger = "hijack_tripwire"`, metric `stopped_before_first_harm`).
+Messages are now gated *before* broker delivery, so a blocked hand-off never reaches the recipient's inbox.

@@ -89,12 +89,15 @@ class AgentRunner:
         gateway_decision: str | None = None,
         payload: dict | None = None,
         malicious: bool = False,
+        pregated: tuple[str | None] | None = None,  # (reason,) when the caller already asked the live guard
     ) -> RawEvent:
         self.clock += timedelta(milliseconds=self.rng.randint(400, 2500))
         self._sequence_counter += 1
         seq = self._sequence_counter
         # Resource-side observations are telemetry, not actions: never gated.
-        paused = self.live.gate(agent.agent_id, event_type, target) if self.live and event_type != "observation" else None
+        paused = pregated[0] if pregated is not None else (self.live.gate(agent.agent_id, event_type, target, action=action, resource=resource, payload=payload,
+                                 sequence=seq, timestamp=iso(self.clock))
+                  if self.live and event_type != "observation" else None)
         if paused:  # denied before execution: a real gateway block, not a post-hoc label
             status, gateway_decision = "denied", "blocked"
             payload = {**(payload or {}), "quarantined": True, "gateway_reason": paused}
@@ -181,6 +184,12 @@ class AgentRunner:
             self.broker.register_agent(sender.agent_id)
         if not self.broker.is_registered(recipient.agent_id):
             self.broker.register_agent(recipient.agent_id)
+        # Ask the live guard BEFORE delivery: a contained hand-off must never reach the recipient's inbox.
+        denied = (self.live.gate(sender.agent_id, "message", recipient.agent_id, action="send", payload=payload,
+                                 sequence=self._sequence_counter + 1, timestamp=iso(self.clock)) if self.live else None)
+        if denied:
+            return self.emit(sender, "message", "send", target=recipient.agent_id, payload=payload, malicious=malicious,
+                             pregated=(denied,))
         delivery = self.broker.send(
             sender.agent_id,
             recipient.agent_id,
@@ -202,6 +211,7 @@ class AgentRunner:
             target=recipient.agent_id,
             payload=payload,
             malicious=malicious,
+            pregated=(None,),
         )
 
     def receive_messages(self, agent: Agent, *, malicious: bool = False) -> list[RawEvent]:

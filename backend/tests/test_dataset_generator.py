@@ -88,3 +88,12 @@ def test_degraded_run_stops_the_batch_and_is_redone_on_resume(tmp_path, rules):
     llm.down = False
     s = generate(_cfg(tmp_path), rules, adapter_factory=lambda: llm, log=lambda m: None)
     assert not s["stopped_early"] and s["degraded_runs"] == 1 and s["learned_runs"] == 2
+
+
+def test_batch_with_live_guard_reports_leaks_stopped(tmp_path, rules):
+    cfg = _cfg(tmp_path, live_guard="contain")
+    s = generate(cfg, rules, adapter_factory=lambda: FakeLLM(gullible=True), log=lambda m: None)
+    spoof = s["scenarios"]["inj_spoofed_planner"]
+    assert spoof["live_runs"] == 2 and spoof["stopped_before_harm"] == 2 and spoof["leaked"] == 0
+    assert s["total"]["innocent_paused"] == 0
+    assert "Live guard (contain)" in (tmp_path / "batch" / "summary.md").read_text(encoding="utf-8")
