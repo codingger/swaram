@@ -55,6 +55,8 @@ class LiveGuard:
         self.registry: dict[str, Agent] = {}
         hijack = next((r for r in rules if r.rule_id == "SG-012"), None)
         self.hijack_params = dict(hijack.params) if hijack else {}
+        content = next((r for r in rules if r.rule_id == "SG-028" and r.enabled), None)
+        self.content_params = dict(content.params) if content else {}  # classifier quarantine (opt-in)
         self.exposure_steps = int(self.hijack_params.get("max_steps", 5))
         self.exposed: dict[str, dict] = {}  # agent -> {"left": steps, "source": what it ingested}
         self.sends: dict[str, NormalizedEvent] = {}  # message_id -> send event (to verify claimed senders)
@@ -94,6 +96,9 @@ class LiveGuard:
                                      "sequence": sequence})
             return (f"quarantined before delivery: claims to be from {payload['claimed_sender']} but the broker has no "
                     f"such message (impersonated sender)")
+        withheld = self._classifier_quarantine(agent_id, resource, payload, sequence)
+        if withheld:
+            return withheld
         exposure = self.exposed.get(agent_id)
         if exposure and self.hijack_params and event_type:
             pending = SimpleNamespace(agent_id=agent_id, event_type=event_type, action=action or "", target=target,
@@ -110,6 +115,26 @@ class LiveGuard:
                                 f"prompt injection, stopped before it ran")
                 return f"blocked before execution: out-of-policy action right after untrusted input ({exposure['source']})"
         return None
+
+    def _classifier_quarantine(self, agent_id: str, resource: str | None, payload: dict | None, sequence: int) -> str | None:
+        """SG-028 in contain mode (quarantine_live): withhold untrusted content the classifier scores as an injection,
+        so the agent never reads it. Off by default: a linear classifier has false positives, and withholding a
+        legitimate email is itself a cost."""
+        if not (self.content_params.get("quarantine_live") and payload and payload.get("untrusted") is True):
+            return None
+        text = payload.get("content")
+        if not isinstance(text, str) or not text.strip():
+            return None
+        from app.modules.detection import injection_classifier as clf
+
+        if not clf.available():
+            return None
+        score = clf.cached_score(text)
+        if score < float(self.content_params.get("quarantine_threshold", 0.9)):
+            return None
+        self.quarantined.append({"agent_id": agent_id, "resource": resource, "claimed_sender": None,
+                                 "sequence": sequence, "reason": "classifier", "score": round(score, 3)})
+        return f"quarantined before delivery: likely prompt injection (classifier score {score:.2f})"
 
     def observe(self, raw: RawEvent) -> None:
         normalized = collect([raw.model_dump(mode="json")], run_id=self.run_id, agents=self.agents).events

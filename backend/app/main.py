@@ -225,7 +225,8 @@ def ingest_open(body: dict[str, Any], p: Pipeline = P) -> dict[str, Any]:
     from app.services import ingest
 
     return ingest.open_session(p, body.get("name") or "external", body.get("agents") or [],
-                               body.get("live_guard", "contain"), float(body.get("pause_at", 0.6)))
+                               body.get("live_guard", "contain"), float(body.get("pause_at", 0.6)),
+                               require_identity=bool(body.get("require_agent_identity")))
 
 
 @app.post("/api/ingest/{run_id}/gate")
@@ -235,7 +236,10 @@ def ingest_gate(run_id: str, body: dict[str, Any]) -> dict[str, Any]:
 
     if not body.get("agent_id"):
         raise HTTPException(400, "agent_id is required")
-    return ingest.session(run_id).gate(body)
+    s = ingest.session(run_id)
+    if not s.verify(body["agent_id"], body.get("agent_token")):
+        raise HTTPException(403, f"agent_token does not prove the caller is {body['agent_id']}")
+    return s.gate(body)
 
 
 @app.get("/api/ingest/{run_id}/control")
@@ -267,6 +271,10 @@ def ingest_events(run_id: str, body: Any = Body(...), format: str | None = None,
         events, _ = convert(format, body, run_id)
     else:
         events = body if isinstance(body, list) else [body]
+    s = ingest.session(run_id)
+    bad = sorted({str(e.get("agent_id")) for e in events if not s.verify(e.get("agent_id"), e.get("agent_token"))})
+    if bad:
+        raise HTTPException(403, f"agent_token missing or wrong for {', '.join(bad)}: events rejected")
     return ingest.add_events(p, run_id, events)
 
 

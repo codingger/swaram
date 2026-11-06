@@ -95,6 +95,13 @@ GET  /api/ingest/{run_id}/control  -> {"paused": {agent: {trigger, since_event, 
                                        "quarantined": [...]}   (poll this to act on the guard's decisions)
 ```
 
+Every session also returns `agent_tokens`: one token per agent (HMAC-SHA256 of the run and agent id). Open the
+session with `"require_agent_identity": true` and every event and gate call must include that agent's own
+`agent_token` (403 otherwise), and the egress proxy takes it as the agent's password. One agent, or a compromised
+process holding the platform's key, then can't report or act as another. Tokens are never stored with events.
+
+Platforms in Python can use the SDK instead of raw HTTP (`sdk/python`, with a LangChain callback handler).
+
 ## Enforcement when the platform doesn't ask the gate: the egress proxy
 
 The gate only stops what a platform asks about. A hijacked agent, or a platform that only reports, won't ask. Data

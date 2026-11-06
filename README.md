@@ -25,7 +25,7 @@ No model is needed: everything runs offline with scripted agents, and real model
   its own; an AI planner assigns the work; agents remember earlier rounds. Attacks are never asked of a model: they are
   scripted, or planted as prompt injections (16 of them, from phishing to a self-spreading worm, a poisoned memory and a sleeper note);
   internal-goal cases test agents with a goal of their own and no attacker.
-- **Threat Detection**: 27 rules (SG-001 to SG-027), a learned behavioural baseline, Bayesian risk with explanations,
+- **Threat Detection**: 28 rules (SG-001 to SG-028), a learned behavioural baseline, Bayesian risk with explanations,
   and an accuracy benchmark (30 attacks, 14 benign look-alikes; precision 1.0). A second, independent evidence source
   (egress proxy, audit and broker logs) keeps detection working when the agent log loses events.
 - **Live guard**: detection while a run happens. It blocks a hijacked agent before its first harmful action,
@@ -34,8 +34,11 @@ No model is needed: everything runs offline with scripted agents, and real model
 - **Security Response**: a review queue (release / confirm, escalation, who decided), operator controls (pause an agent,
   stop a run), webhook notifications, honest records (`blocked` only when an action was really denied), and an egress
   proxy that enforces pauses and holds at the network even when the agent platform doesn't cooperate.
-- **Real agents**: a live ingest API with a pre-execution gate, OpenTelemetry and LangSmith importers, personal-data
-  redaction, and a tamper-evident hash-chained log.
+- **Real agents**: a live ingest API with a pre-execution gate, a Python SDK and LangChain handler (`sdk/python`),
+  per-agent identity tokens, OpenTelemetry and LangSmith importers, personal-data redaction, and a tamper-evident
+  hash-chained log.
+- **Injection classifier** (SG-028): a model trained on public datasets scores every untrusted input; measured on
+  datasets it never saw (`docs/injection-classifier.md`).
 - **Operations**: API keys with roles, a Gemini quota meter that refuses runs that won't fit, a dataset generator, an
   adaptive injection fuzzer, an internal-goal fuzzer (agents breaking policy for a goal of their own, no attacker), a
   real-agent demo enforced at the network (`scripts/demo_real_agents.py`), and CI on every pull request.
@@ -44,6 +47,8 @@ No model is needed: everything runs offline with scripted agents, and real model
 |---|---|
 | `docs/threat-model.md` | Every threat, rule and measured result |
 | `docs/live-stream.md` | The live stream contract, operator controls, ingest API |
+| `docs/injection-classifier.md` | The trained injection classifier: data, licenses, measured results |
+| `sdk/python/README.md` | Connecting an agent platform (SDK, LangChain) |
 | `docs/collector-and-response.md` | Collector and response features |
 | `docs/dataset-generator.md` | Generating AI-mode datasets |
 | `backend/app/modules/simulator/README.md` | Simulator, AI mode, injections, providers, quota |

@@ -332,6 +332,12 @@ from app.modules.detection.assurance_rules import ASSURANCE_IMPLS, ASSURANCE_RUL
 DEFAULT_RULES.extend(ASSURANCE_RULES)
 RULE_IMPLS.update(ASSURANCE_IMPLS)
 
+# Content: the trained prompt-injection classifier (SG-028).
+from app.modules.detection.content_rules import CONTENT_IMPLS, CONTENT_RULES  # noqa: E402
+
+DEFAULT_RULES.extend(CONTENT_RULES)
+RULE_IMPLS.update(CONTENT_IMPLS)
+
 
 SENSOR_READERS = {"SG-021"}  # rules that reconcile sensor records with the agent log
 
