@@ -90,6 +90,38 @@ POST /api/ingest/{run_id}/finish  -> runs collect, detect, respond, evaluate; pu
 `event_type` is one of `message`, `tool_call`, `resource_access`, `data_transfer`, `task`. `event_id`, `timestamp` and
 `sequence` are filled in if missing.
 
+```
+GET  /api/ingest/{run_id}/control  -> {"paused": {agent: {trigger, since_event, explanation}}, "held_egress": {...},
+                                       "quarantined": [...]}   (poll this to act on the guard's decisions)
+```
+
+## Enforcement when the platform doesn't ask the gate: the egress proxy
+
+The gate only stops what a platform asks about. A hijacked agent, or a platform that only reports, won't ask. Data
+theft still has to leave over the network, so SwarmGuard can sit on that path: start the app with
+`SWARMGUARD_EGRESS_PROXY_PORT=8899` and run each agent with
+
+```
+HTTP_PROXY=http://<run_id>%2F<agent_id>:<agent api key>@guard-host:8899
+HTTPS_PROXY=http://<run_id>%2F<agent_id>:<agent api key>@guard-host:8899
+```
+
+(and block direct outbound traffic at the firewall, so the proxy is the only way out). Every request is then checked
+whether or not the agent cooperates:
+
+| Situation | Proxy answer | Recorded as |
+|---|---|---|
+| Agent paused (live detection, policy, operator, tripwire) | 403 | blocked `data_transfer` (a real block) |
+| Agent's outbound transfers held (need-to-know) | 403 | blocked `data_transfer` |
+| Destination not in `SWARMGUARD_EGRESS_ALLOW` (enforce mode) | 403 | blocked `data_transfer` |
+| Allowed | forwarded | egress sensor record; if the agent never reports it, SG-021 flags a gateway bypass |
+| No / wrong credentials | 407 | nothing |
+
+HTTPS goes through a CONNECT tunnel: the proxy sees the host, not the content (no TLS interception). With
+`SWARMGUARD_EGRESS_MODE=monitor` off-allowlist hosts are forwarded but flagged; guard decisions are always enforced.
+If the proxy can't reach a decision it refuses (fails closed). `GET /api/egress-proxy` shows its settings and recent
+decisions.
+
 ## Performance
 
 The live guard re-checks every rule over the run so far after each event, so its cost grows with the square of the
