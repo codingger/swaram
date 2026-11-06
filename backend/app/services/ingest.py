@@ -60,7 +60,8 @@ class IngestSession:
         with self.lock:
             reason = self.stream.gate(req["agent_id"], req.get("event_type"), req.get("target"), action=req.get("action"),
                                       resource=req.get("resource"), payload=req.get("payload") or {},
-                                      sequence=self.seq + 1, timestamp=now_iso())
+                                      sequence=self.seq + 1, timestamp=now_iso(),
+                                      policy_check=req.get("policy_check", True))
         return {"allow": reason is None, "reason": reason}
 
     def add(self, raw: dict) -> RawEvent:

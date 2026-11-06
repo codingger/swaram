@@ -121,7 +121,10 @@ class EgressProxy:
         if host.lower() not in self.allow:
             reasons.append(f"destination {host} is not on the egress allowlist")
         guard_reason = session.gate({"agent_id": agent_id, "event_type": "data_transfer", "action": action,
-                                     "target": dest, "resource": resource})["reason"] if session else None
+                                     "target": dest, "resource": resource,
+                                     # destinations are this proxy's allowlist's job (above): ask the guard only about
+                                     # pauses, holds and the hijack tripwire
+                                     "policy_check": False})["reason"] if session else None
         if guard_reason:
             reasons.append(guard_reason)
         refuse = bool(reasons) and (self.mode == "enforce" or guard_reason is not None)

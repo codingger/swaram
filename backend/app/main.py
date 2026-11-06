@@ -31,6 +31,9 @@ async def lifespan(app: FastAPI):
 
     get_pipeline().seed_defaults()
     notify.install(get_hub())  # opt-in: SWARMGUARD_WEBHOOK_URL
+    from app.services import siem
+
+    siem.install(get_hub(), lambda run_id: get_pipeline().alerts(run_id))  # opt-in: SWARMGUARD_SIEM_URL
     from app.services import review
 
     review.start_escalation_loop(get_store)  # overdue reviews are announced again
@@ -145,7 +148,12 @@ def run_normalized_events(run_id: str, p: Pipeline = P):
 
 
 @app.get("/api/runs/{run_id}/alerts")
-def run_alerts(run_id: str, p: Pipeline = P):
+def run_alerts(run_id: str, format: str | None = None, p: Pipeline = P):
+    """The run's alerts; ?format=ocsf returns them as OCSF Detection Findings for a SIEM."""
+    if format == "ocsf":
+        from app.services import siem
+
+        return siem.findings(p.alerts(run_id))
     return p.alerts(run_id)
 
 
@@ -224,9 +232,32 @@ async def live(ws: WebSocket):
 def ingest_open(body: dict[str, Any], p: Pipeline = P) -> dict[str, Any]:
     from app.services import ingest
 
-    return ingest.open_session(p, body.get("name") or "external", body.get("agents") or [],
-                               body.get("live_guard", "contain"), float(body.get("pause_at", 0.6)),
-                               require_identity=bool(body.get("require_agent_identity")))
+    out = ingest.open_session(p, body.get("name") or "external", body.get("agents") or [],
+                              body.get("live_guard", "contain"), float(body.get("pause_at", 0.6)),
+                              require_identity=bool(body.get("require_agent_identity")))
+    if body.get("mcp"):
+        ingest.SESSIONS[out["run_id"]].mcp = dict(body["mcp"])  # MCP gateway settings (services/mcp_gateway.py)
+        out["mcp"] = {a["agent_id"]: f"/api/ingest/{out['run_id']}/mcp/{a['agent_id']}" for a in body.get("agents") or []}
+    return out
+
+
+@app.post("/api/ingest/{run_id}/mcp/{agent_id}")
+async def ingest_mcp(run_id: str, agent_id: str, request: Request, p: Pipeline = P):
+    """MCP gateway: the agent's MCP client talks to this URL; tool calls are gated, then sent to the real server."""
+    import asyncio
+
+    from fastapi.responses import JSONResponse, Response
+
+    from app.services import ingest, mcp_gateway
+
+    s = ingest.session(run_id)
+    if not s.verify(agent_id, request.headers.get("x-agent-token")):
+        raise HTTPException(403, f"X-Agent-Token does not prove the caller is {agent_id}")
+    msg = await request.json()
+    body, headers = await asyncio.to_thread(mcp_gateway.handle, p, run_id, agent_id, msg, dict(request.headers))
+    if body is None:
+        return Response(status_code=202, headers=headers)
+    return JSONResponse(body, headers=headers)
 
 
 @app.post("/api/ingest/{run_id}/gate")
@@ -421,6 +452,14 @@ def detection_baseline(p: Pipeline = P):
 def train_detection_baseline(req: BaselineTrainRequest, p: Pipeline = P):
     """Retrain from synthetic normal runs, or fold in one run confirmed clean (continual learning)."""
     return p.train_baseline(req)
+
+
+@app.get("/api/coverage/owasp")
+def owasp_coverage() -> dict[str, Any]:
+    """How SwarmGuard's rules and controls cover the OWASP Top 10 for Agentic Applications."""
+    from app.modules.detection.owasp import coverage
+
+    return coverage()
 
 
 @app.get("/api/detection-rules")

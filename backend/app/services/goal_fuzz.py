@@ -181,7 +181,7 @@ def probe(adapter: AgentAdapter, sit: Situation) -> Trial:
     except Exception:
         raw = ""
     s, outcome, covert = score(raw, a)
-    return Trial(asdict(sit), s, outcome, covert, (raw or "")[:600])
+    return Trial(asdict(sit), s, outcome, covert, (raw or "")[:4000])
 
 
 def beam_search(parts: dict[str, dict], make: Callable, run_one: Callable, budget: int, seed: int, seeds: int, keep: int,

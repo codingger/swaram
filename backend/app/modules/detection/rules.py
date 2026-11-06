@@ -150,6 +150,7 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
     taint: dict[str, _Taint] = {}
     reads: list[NormalizedEvent] = []  # successful restricted reads so far (for inference under missing data)
     handoffs: list[NormalizedEvent] = []  # restricted data_ref sent to agents not permitted to hold it
+    attempts: list[NormalizedEvent] = []  # the same hand-off, refused before it ran (pre-execution check, gateway)
     coverage = LogCoverage.of(events)
     alerts = []
 
@@ -159,6 +160,10 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
         return (parse_iso(e.timestamp) - parse_iso(t.events[0].timestamp)).total_seconds() <= window
 
     for e in events:
+        if (e.status == "denied" and baseline.is_send(e) and e.target in registry
+                and under(e.payload.get("data_ref"), restricted)
+                and not under(e.payload.get("data_ref"), registry[e.target].permissions)):
+            attempts.append(e)
         if e.status != "success" and e.event_type != "data_transfer":
             continue
         if e.event_type == "resource_access" and under(e.resource, restricted) and e.action in READ_ACTIONS:
@@ -171,7 +176,7 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
                 src = _Taint(resource=ref, chain=[e.agent_id], events=[])
             if e.target not in src.chain:
                 taint[e.target] = _Taint(resource=ref, chain=src.chain + [e.target], events=src.events + [e])
-            if e.target in registry and ref not in registry[e.target].permissions:
+            if e.target in registry and not under(ref, registry[e.target].permissions):
                 handoffs.append(e)  # need-to-know violation, even if nothing leaks afterwards
         elif e.event_type == "data_transfer" and (e.target or "").startswith(EXTERNAL_PREFIX) and e.target not in allow:
             t = taint.get(e.agent_id)
@@ -196,6 +201,10 @@ def rule_coordinated_leakage(rule: DetectionRule, run_id: str, events: list[Norm
             reason = (f"{m.agent_id} handed restricted data {m.payload.get('data_ref')} to {m.target}, which is not permitted "
                       f"to hold it. No leak is logged (yet); this is a need-to-know violation on its own.")
             alerts.append(_make_alert(rule, run_id, [m.agent_id], [m], m.payload.get("data_ref"), reason, "high"))
+    for m in attempts:  # stopped, but the attempt is still evidence about the sender
+        reason = (f"{m.agent_id} tried to hand restricted data {m.payload.get('data_ref')} to {m.target}, which is not "
+                  f"permitted to hold it. It was refused before it ran, so nothing moved; the attempt is the signal.")
+        alerts.append(_make_alert(rule, run_id, [m.agent_id], [m], m.payload.get("data_ref"), reason, "medium"))
     return alerts
 
 
