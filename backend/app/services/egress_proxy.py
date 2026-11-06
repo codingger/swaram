@@ -105,18 +105,21 @@ class EgressProxy:
         from app import auth
         from app.services import ingest
 
-        if auth.enabled():
+        if not agent_id:
+            return 407, "proxy credentials must name the agent: run_id/agent_id"
+        session = ingest.SESSIONS.get(run_id or "")
+        if session is not None and session.require_identity:  # the agent's own token, not a shared key
+            if not session.verify(agent_id, key):
+                return 407, f"proxy password is not {agent_id}'s agent token"
+        elif auth.enabled():
             who = auth.identify(key)
             if not auth.allowed(who, "agent"):
                 return 407, "proxy credentials missing or not an agent key"
-        if not agent_id:
-            return 407, "proxy credentials must name the agent: run_id/agent_id"
         dest = f"external:{host.lower()}"
         action = "download" if method == "GET" else "upload"
         reasons = []
         if host.lower() not in self.allow:
             reasons.append(f"destination {host} is not on the egress allowlist")
-        session = ingest.SESSIONS.get(run_id or "")
         guard_reason = session.gate({"agent_id": agent_id, "event_type": "data_transfer", "action": action,
                                      "target": dest, "resource": resource})["reason"] if session else None
         if guard_reason:

@@ -568,3 +568,23 @@ contained.
 - This covers SG-001/002/003, the dead-drop and taint rules, risk scoring, the need-to-know hold, and the simulator's
   ground truth.
 - No earlier result changed: all snapshot and benchmark tests are identical.
+
+## 21. Content-based injection detection, integrations and agent identity
+
+- **SG-028, trained injection classifier.** Every untrusted input is scored by a model trained on openly licensed
+  public datasets and evaluated on data it never saw. On our own 18 hand-written injections it reached precision 1.00
+  and recall 0.67, with no false alarms on benign workspace documents. Full results and weaknesses are in
+  `docs/injection-classifier.md`.
+  - It complements the behaviour rules, it doesn't replace them. The injections it misses (look-alike policy pages,
+    fake errors, poisoned memory) are exactly the ones SG-012, the tripwire and the egress controls catch from what
+    the agent does next.
+  - Live quarantine before the agent reads the content is available but opt-in.
+- **Integrations.** A Python SDK (`sdk/python`) wraps the ingest API: session, gate, report, control, a `guarded`
+  decorator and a proxy URL per agent. A LangChain callback handler gates every tool call and sends output from
+  untrusted tools for scanning.
+- **Agent identity.** Each agent in a session gets its own HMAC token. With `require_agent_identity`, events, gate
+  calls and proxied traffic must carry the right agent's token. A process holding the platform's shared key can no
+  longer act or report as another agent. That spoofing would otherwise undermine attribution and the impersonation
+  check (SG-026).
+  - We chose per-agent session tokens over public-key identities (DIDs, Ed25519): the server issues and verifies every
+    token, so public keys would add no protection here.
