@@ -14,6 +14,7 @@ import copy
 import math
 from collections import defaultdict
 
+from app.modules.simulator.world import under
 from app.schemas import Agent, NormalizedEvent
 
 RARE_P = 0.1  # behaviors seen in >= 10% of same-role agents are "normal"
@@ -159,7 +160,7 @@ def is_sensitive(behavior: str, restricted: set[str], prefixes: list[str]) -> bo
     if behavior.startswith("data_transfer:") or "data_ref=" in behavior:
         return True
     target = behavior.split(":", 2)[-1]
-    return target in restricted or any(target.startswith(p) for p in prefixes)
+    return under(target, restricted) or any(target.startswith(p) for p in prefixes)
 
 
 def identity_drift(profile: dict, agent: Agent, behaviors: dict[str, list[str]], peers: set[str], *, restricted: set[str],

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from app.modules.simulator.world import under
 from app.modules.detection import baseline
 from app.schemas import Agent, AgentAssessment, Alert, AuditItem, DetectionRule, Hypothesis, NormalizedEvent, RareBehavior
 
@@ -131,7 +132,7 @@ def assess(run_id: str, events: list[NormalizedEvent], agents: list[Agent], aler
     # One pass over the events for the per-agent facts below (was one full scan per agent).
     perms = {a.agent_id: set(a.permissions) for a in agents}
     restricted_reads = {e.agent_id for e in events
-                        if e.event_type == "resource_access" and e.resource in restricted and e.status == "success"
+                        if e.event_type == "resource_access" and under(e.resource, restricted) and e.status == "success"
                         and e.resource in perms.get(e.agent_id, ())}
     by_agent: dict[str, list[NormalizedEvent]] = defaultdict(list)
     for e in events:
@@ -246,7 +247,7 @@ def audit_queue(events: list[NormalizedEvent], agents: list[Agent], alerts: list
         if e.event_id in cited:
             reasons.append(f"cited by {', '.join(sorted(set(cited[e.event_id])))}")
             prio += 0.35
-        sensitive = (e.resource in restricted or any((e.resource or "").startswith(x) for x in SENSITIVE_PREFIXES)
+        sensitive = (under(e.resource, restricted) or any((e.resource or "").startswith(x) for x in SENSITIVE_PREFIXES)
                      or (e.event_type == "data_transfer" and (e.target or "").startswith("external:")))
         gap = coverage.missing_around(e, 30.0) if sensitive else 0
         if gap >= 2:
