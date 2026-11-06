@@ -46,6 +46,24 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def require_api_key(request: Request, call_next):
+    """Role check for every API call when SWARMGUARD_API_KEYS is set (see app/auth.py)."""
+    from app import auth
+
+    request.state.principal = None
+    if auth.enabled():
+        need = auth.required_role(request.method, request.url.path)
+        who = auth.identify(auth.key_from(request.headers, request.query_params))
+        if not auth.allowed(who, need):
+            status = 401 if who is None else 403
+            msg = ("Missing or unknown API key: send 'Authorization: Bearer <key>'." if who is None
+                   else f"The {who.role} key '{who.name}' can't do this (needs {need}).")
+            return JSONResponse(status_code=status, content={"detail": msg})
+        request.state.principal = who
+    return await call_next(request)
+
+
 @app.exception_handler(NotFound)
 async def not_found(_: Request, exc: NotFound):
     return JSONResponse(status_code=404, content={"detail": str(exc)})
@@ -62,7 +80,16 @@ P = Depends(get_pipeline)
 # ------------------------------------------------------------------ meta
 @app.get("/api/health")
 def health(p: Pipeline = P) -> dict[str, Any]:
-    return {"ok": True, "storage": p.store.backend, "workspace": p.store.workspace}
+    from app import auth
+
+    return {"ok": True, "storage": p.store.backend, "workspace": p.store.workspace,
+            "auth": "on" if auth.enabled() else "off"}
+
+
+@app.get("/api/whoami")
+def whoami(request: Request) -> dict[str, Any]:
+    who = request.state.principal
+    return {"auth": who is not None, "name": who.name if who else None, "role": who.role if who else "local"}
 
 
 @app.get("/api/gemini/quota")
@@ -165,6 +192,11 @@ async def live(ws: WebSocket):
 
     from app.services.live_hub import get_hub
 
+    from app import auth
+
+    if auth.enabled() and not auth.allowed(auth.identify(ws.query_params.get("key")), "viewer"):
+        await ws.close(code=1008)  # policy violation: no or wrong key
+        return
     await ws.accept()
     hub = get_hub()
     run_id = ws.query_params.get("run_id") or None
@@ -247,11 +279,12 @@ def escalate_reviews(minutes: float = 15.0, p: Pipeline = P) -> list[dict[str, A
 
 
 @app.post("/api/reviews/{review_id}")
-def decide_review(review_id: str, body: dict[str, Any], p: Pipeline = P) -> dict[str, Any]:
-    """{"decision": "release" | "confirm", "note": "..."}"""
+def decide_review(review_id: str, body: dict[str, Any], request: Request, p: Pipeline = P) -> dict[str, Any]:
+    """{"decision": "release" | "confirm", "note": "..."}. With API keys on, the key's name is recorded as who decided."""
     from app.services import review
 
-    return review.decide(p.store, review_id, body.get("decision", ""), body.get("note"), body.get("by"))
+    who = request.state.principal
+    return review.decide(p.store, review_id, body.get("decision", ""), body.get("note"), who.name if who else body.get("by"))
 
 
 @app.get("/api/runs/{run_id}/integrity")

@@ -180,6 +180,8 @@ def identity_drift(profile: dict, agent: Agent, behaviors: dict[str, list[str]],
             continue
         if b.startswith("message:"):
             continue  # message volume scales with swarm size; runaway messaging is SG-018's job
+        if not is_sensitive(b, restricted, prefixes):
+            continue  # more wiki reads than usual is not a threat (seen with real AI agents); more PII reads is
         mean = h["sum"] / runs
         std = max(0.0, h["sumsq"] / runs - mean * mean) ** 0.5
         if len(ids) >= 3 and len(ids) > mean + sigmas * max(std, 1.0):
