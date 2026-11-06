@@ -23,7 +23,8 @@ No model is needed: everything runs offline with scripted agents, and real model
 
 - **AI mode**: each agent's model (Gemini, any OpenAI-compatible API, or a local Ollama model) plans and acts on
   its own; an AI planner assigns the work; agents remember earlier rounds. Attacks are never asked of a model: they are
-  scripted, or planted as prompt injections (13 of them, from phishing to a self-spreading worm and a sleeper note).
+  scripted, or planted as prompt injections (16 of them, from phishing to a self-spreading worm, a poisoned memory and a sleeper note);
+  internal-goal cases test agents with a goal of their own and no attacker.
 - **Threat Detection**: 27 rules (SG-001 to SG-027), a learned behavioural baseline, Bayesian risk with explanations,
   and an accuracy benchmark (30 attacks, 14 benign look-alikes; precision 1.0). A second, independent evidence source
   (egress proxy, audit and broker logs) keeps detection working when the agent log loses events.
@@ -36,7 +37,8 @@ No model is needed: everything runs offline with scripted agents, and real model
 - **Real agents**: a live ingest API with a pre-execution gate, OpenTelemetry and LangSmith importers, personal-data
   redaction, and a tamper-evident hash-chained log.
 - **Operations**: API keys with roles, a Gemini quota meter that refuses runs that won't fit, a dataset generator, an
-  adaptive injection fuzzer, and CI on every pull request.
+  adaptive injection fuzzer, an internal-goal fuzzer (agents breaking policy for a goal of their own, no attacker), a
+  real-agent demo enforced at the network (`scripts/demo_real_agents.py`), and CI on every pull request.
 
 | Doc | What's in it |
 |---|---|

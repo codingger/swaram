@@ -14,6 +14,7 @@ import unicodedata
 from bisect import bisect_right
 from collections import defaultdict
 
+from app.modules.simulator.world import under
 from app.modules.detection import baseline
 from app.modules.detection.control_rules import MUTATE_ACTIONS, _command, _done, _per_agent, _starts
 from app.modules.detection.evidence import LogCoverage
@@ -46,12 +47,12 @@ def out_of_policy(e: NormalizedEvent, registry: dict[str, Agent], params: dict) 
     """Actions no task should produce: used by hijack and trigger-correlation checks."""
     perms = set(registry[e.agent_id].permissions) if e.agent_id in registry else set()
     restricted = set(params.get("restricted_resources", RESTRICTED_RESOURCES))
-    if e.event_type == "resource_access" and e.resource in restricted and e.resource not in perms:
+    if e.event_type == "resource_access" and under(e.resource, restricted) and not under(e.resource, perms):
         return True
     if _unapproved_external(e, set(params.get("allowlist", EXTERNAL_ALLOWLIST))):
         return True
     ref = e.payload.get("data_ref")
-    if baseline.is_send(e) and ref in restricted and e.target in registry and ref not in registry[e.target].permissions:
+    if baseline.is_send(e) and under(ref, restricted) and e.target in registry and not under(ref, registry[e.target].permissions):
         return True  # handing restricted data to a teammate who may not hold it
     return _starts(e.resource, params.get("sensitive_prefixes", SENSITIVE_PREFIXES)) and e.resource not in perms
 
@@ -261,7 +262,7 @@ def rule_deceptive_report(rule: DetectionRule, run_id: str, events: list[Normali
             if not isinstance(claims, dict):
                 continue
             before = evs[:i]
-            touched = [x for x in before if x.event_type == "resource_access" and x.resource in restricted and x.status == "success"]
+            touched = [x for x in before if x.event_type == "resource_access" and under(x.resource, restricted) and x.status == "success"]
             sent = [x for x in before if _unapproved_external(x, allow) and x.status == "success"]
             lies = []
             if claims.get("restricted_access") is False and touched:
@@ -316,7 +317,7 @@ def rule_salami(rule: DetectionRule, run_id: str, events: list[NormalizedEvent],
     coverage = LogCoverage.of(events)
     hits: dict[str, list[NormalizedEvent]] = {}
     for agent_id, evs in _by_agent(events).items():
-        reads = [e for e in evs if e.event_type == "resource_access" and e.resource in restricted and e.action in READS and e.status == "success"]
+        reads = [e for e in evs if e.event_type == "resource_access" and under(e.resource, restricted) and e.action in READS and e.status == "success"]
         for i, start in enumerate(reads):
             inside = [x for x in reads[i:] if _secs(start, x) <= window]
             volume = sum(int(x.payload.get("bytes") or 0) for x in inside)

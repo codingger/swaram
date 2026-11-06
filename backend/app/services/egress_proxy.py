@@ -14,7 +14,9 @@ For every outbound request the proxy:
   and logs an egress sensor record, so an upload the agent never reported shows up as a gateway bypass (SG-021).
 
 Settings: SWARMGUARD_EGRESS_PROXY_PORT (start it with the app), SWARMGUARD_EGRESS_ALLOW (comma-separated hosts),
-SWARMGUARD_EGRESS_MODE (`enforce` default, or `monitor`: log and flag but don't refuse).
+SWARMGUARD_EGRESS_MODE (`enforce` default, or `monitor`: log and flag but don't refuse). Optionally
+a platform may name what it is sending in an `X-SwarmGuard-Resource` header (recorded, never forwarded), and for
+demos and tests SWARMGUARD_EGRESS_RESOLVE (`host=ip:port,...`, `*` for any host): where to really connect for a destination name.
 """
 from __future__ import annotations
 
@@ -32,6 +34,18 @@ def allow_hosts() -> set[str]:
     return {h.strip().lower() for h in os.getenv("SWARMGUARD_EGRESS_ALLOW", "").split(",") if h.strip()}
 
 
+def resolve_map(raw: str | None = None) -> dict[str, tuple[str, int]]:
+    """"approved-partner-api=127.0.0.1:9900,*=127.0.0.1:9900" -> {host: (ip, port)}."""
+    raw = os.getenv("SWARMGUARD_EGRESS_RESOLVE", "") if raw is None else raw
+    out = {}
+    for part in raw.split(","):
+        host, _, addr = part.strip().partition("=")
+        ip, _, port = addr.rpartition(":")
+        if host and ip and port.isdigit():
+            out[host.lower()] = (ip, int(port))
+    return out
+
+
 def _identity(headers: dict[str, str]) -> tuple[str | None, str | None, str | None]:
     """(run_id, agent_id, key) from Proxy-Authorization: Basic base64("run_id/agent_id:key")."""
     raw = headers.get("proxy-authorization", "")
@@ -47,8 +61,9 @@ def _identity(headers: dict[str, str]) -> tuple[str | None, str | None, str | No
 
 class EgressProxy:
     def __init__(self, host: str = "127.0.0.1", port: int = 8899, mode: str | None = None, allow: set[str] | None = None,
-                 pipeline=None):
+                 pipeline=None, resolve: dict[str, tuple[str, int]] | None = None):
         self.host, self.port, self.pipeline = host, port, pipeline  # pipeline: where proxy records are stored
+        self.resolve = resolve if resolve is not None else resolve_map()
         self.mode = (mode or os.getenv("SWARMGUARD_EGRESS_MODE", "enforce")).lower()
         self.allow = allow if allow is not None else allow_hosts()
         self.loop: asyncio.AbstractEventLoop | None = None
@@ -84,7 +99,8 @@ class EgressProxy:
             self.loop.call_soon_threadsafe(self.loop.stop)
 
     # ---------------------------------------------------------------- decision
-    def decide(self, run_id: str | None, agent_id: str | None, key: str | None, host: str, method: str) -> tuple[int, str | None]:
+    def decide(self, run_id: str | None, agent_id: str | None, key: str | None, host: str, method: str,
+               resource: str | None = None) -> tuple[int, str | None]:
         """(HTTP status to answer with, or 0 to forward; reason). Records the outcome in the agent's live session."""
         from app import auth
         from app.services import ingest
@@ -102,7 +118,7 @@ class EgressProxy:
             reasons.append(f"destination {host} is not on the egress allowlist")
         session = ingest.SESSIONS.get(run_id or "")
         guard_reason = session.gate({"agent_id": agent_id, "event_type": "data_transfer", "action": action,
-                                     "target": dest})["reason"] if session else None
+                                     "target": dest, "resource": resource})["reason"] if session else None
         if guard_reason:
             reasons.append(guard_reason)
         refuse = bool(reasons) and (self.mode == "enforce" or guard_reason is not None)
@@ -113,12 +129,14 @@ class EgressProxy:
         if session:
             if refuse:  # an attempt the network refused: a real block, logged as the agent's own (denied) action
                 record = ({"agent_id": agent_id, "event_type": "data_transfer", "action": action, "target": dest,
-                             "status": "denied", "gateway_decision": "blocked",
-                             "payload": {"source": "egress-proxy", "enforced_by": "egress proxy", "gateway_reason": detail}})
+                           **({"resource": resource} if resource else {}),
+                           "status": "denied", "gateway_decision": "blocked",
+                           "payload": {"source": "egress-proxy", "enforced_by": "egress proxy", "gateway_reason": detail}})
             else:  # it left: an independent sensor record (fused with what the agent reports)
                 record = ({"agent_id": agent_id, "event_type": "observation", "action": action, "target": dest,
-                             "payload": {"source": "egress-proxy", "mirrors": "data_transfer",
-                                         **({"flag": detail} if detail else {})}})
+                           **({"resource": resource} if resource else {}),
+                           "payload": {"source": "egress-proxy", "mirrors": "data_transfer",
+                                       **({"flag": detail} if detail else {})}})
             if self.pipeline is not None:
                 ingest.add_events(self.pipeline, run_id, [record])  # stored, so it counts when the session finishes
             else:
@@ -152,7 +170,8 @@ class EgressProxy:
             host, port = u.hostname or "", u.port or 80
         try:
             status, reason = await asyncio.get_running_loop().run_in_executor(
-                None, self.decide, run_id, agent_id, key, host, method.upper())
+                None, self.decide, run_id, agent_id, key, host, method.upper(),
+                headers.get("x-swarmguard-resource"))  # optional: what a cooperating platform says it is sending
         except Exception as exc:  # fail closed: if we can't decide, nothing leaves
             log.exception("egress proxy decision failed")
             status, reason = 403, f"guard error ({type(exc).__name__}); refused"
@@ -166,7 +185,8 @@ class EgressProxy:
             writer.close()
             return
         try:
-            up_r, up_w = await asyncio.wait_for(asyncio.open_connection(host, port), 10)
+            real = self.resolve.get(host.lower()) or self.resolve.get("*") or (host, port)
+            up_r, up_w = await asyncio.wait_for(asyncio.open_connection(*real), 10)
         except Exception as exc:
             writer.write(b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n")
             await writer.drain()
@@ -179,7 +199,8 @@ class EgressProxy:
         else:  # absolute-form -> origin-form, without our proxy headers
             u = urlsplit(target)
             path = (u.path or "/") + (f"?{u.query}" if u.query else "")
-            kept = [ln for ln in lines[1:] if ln and not ln.lower().startswith(("proxy-authorization", "proxy-connection"))]
+            ours = ("proxy-authorization", "proxy-connection", "x-swarmguard-")
+            kept = [ln for ln in lines[1:] if ln and not ln.lower().startswith(ours)]
             up_w.write((f"{method} {path} {version}\r\n" + "\r\n".join(kept) + "\r\n\r\n").encode("latin-1"))
             await up_w.drain()
         await asyncio.gather(self._pipe(reader, up_w), self._pipe(up_r, writer), return_exceptions=True)

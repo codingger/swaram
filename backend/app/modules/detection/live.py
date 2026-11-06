@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from app.modules.simulator.world import under
 from app.modules.collector.normalizer import collect
 from app.modules.detection.advanced_rules import _ingests, copies, distinctive_tokens, out_of_policy, provenance_marked, shingles
 from app.modules.detection.assurance_rules import sender_verified
@@ -195,7 +196,7 @@ class LiveGuard:
             return
         ref, target = e.payload.get("data_ref"), e.target
         recipient = self.registry.get(target or "")
-        if (ref in self.restricted and recipient and ref not in recipient.permissions and target not in self.held
+        if (under(ref, self.restricted) and recipient and not under(ref, recipient.permissions) and target not in self.held
                 and target not in self.released):
             self.held[target] = Containment(agent_id=target, role=recipient.role, scope="egress", trigger="need_to_know",
                                             paused_at_sequence=e.sequence,
