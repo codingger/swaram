@@ -34,12 +34,18 @@ END_OF_RUN_RULES = {"SG-010"}
 
 
 class LiveGuard:
-    def __init__(self, rules: list[DetectionRule], mode: str = "contain", pause_at: float = 0.6, policy=None):
+    def __init__(self, rules: list[DetectionRule], mode: str = "contain", pause_at: float = 0.6, policy=None,
+                 policy_gate: bool = True):
         self.rules = [r for r in rules if r.rule_id not in END_OF_RUN_RULES]
         # Response policy applied live (Security Response): each new alert's decision (pause / block) is enforced on
         # the agents it names as the alert fires, not only after the run.
         self.policy = policy
         self.responses: list[dict] = []
+        # Pre-execution policy check: in contain mode, an action outside the agent's own policy is refused before it
+        # runs, whoever the agent is and whatever its reason (injection, a goal of its own, a bug). The tripwire above
+        # it still pauses agents that just read untrusted content; this one only refuses the single action.
+        self.policy_gate = policy_gate
+        self.policy_blocks: list[dict] = []
         self.mode = mode
         self.pause_at = pause_at
         self.run_id = ""
@@ -75,7 +81,8 @@ class LiveGuard:
         self.registry = {a.agent_id: a for a in agents}
 
     def gate(self, agent_id: str, event_type: str | None = None, target: str | None = None, *, action: str | None = None,
-             resource: str | None = None, payload: dict | None = None, sequence: int = 0, timestamp: str = "") -> str | None:
+             resource: str | None = None, payload: dict | None = None, sequence: int = 0, timestamp: str = "",
+             policy_check: bool = True) -> str | None:
         """Called BEFORE an action executes. A reason means: deny it."""
         if self.mode != "contain":
             return None
@@ -114,6 +121,26 @@ class LiveGuard:
                     explanation=f"tried {what} right after ingesting untrusted content ({exposure['source']}): likely "
                                 f"prompt injection, stopped before it ran")
                 return f"blocked before execution: out-of-policy action right after untrusted input ({exposure['source']})"
+        if policy_check and self.policy_gate and event_type and event_type != "observation" and action != "receive":
+            pending = SimpleNamespace(agent_id=agent_id, event_type=event_type, action=action or "", target=target,
+                                      resource=resource, payload=payload or {}, status="success")
+            if out_of_policy(pending, self.registry, self.hijack_params):
+                what = " ".join(x for x in (action or event_type, resource or (payload or {}).get("data_ref"),
+                                            f"-> {target}" if target else None) if x)
+                self.policy_blocks.append({"agent_id": agent_id, "role": self.roles.get(agent_id), "action": what,
+                                           "sequence": sequence, "timestamp": timestamp})
+                # An agent that tried this may try something else: hold its outbound transfers until a human
+                # reviews it (it can keep doing permitted internal work). Shows up as a containment and a review item.
+                if agent_id in self.held:
+                    self.held[agent_id].blocked_actions += 1
+                elif agent_id not in self.released:
+                    self.held[agent_id] = Containment(
+                        agent_id=agent_id, role=self.roles.get(agent_id), scope="egress", trigger="policy_check",
+                        paused_at_sequence=sequence, paused_at=timestamp, risk=0.0, blocked_actions=1,
+                        explanation=f"tried {what}, outside its policy: refused before it ran; outbound transfers held "
+                                    f"until reviewed")
+                return (f"blocked before execution: {what} is outside the {self.roles.get(agent_id) or 'agent'}'s "
+                        f"policy (pre-execution check)")
         return None
 
     def _classifier_quarantine(self, agent_id: str, resource: str | None, payload: dict | None, sequence: int) -> str | None:
@@ -327,6 +354,7 @@ class LiveGuard:
             "quarantined_inputs": len(self.quarantined),
             "policy_responses": len(self.responses),
             "stopped_before_first_harm": sum(1 for c in self.paused.values() if c.trigger == "hijack_tripwire"),
+            "blocked_by_policy_check": len(self.policy_blocks),
             "blocked_actions_total": sum(c.blocked_actions for c in [*self.paused.values(), *self.held.values()]),
         }
         return LiveReport(run_id=self.run_id, mode=self.mode, pause_at=self.pause_at, events_processed=len(self.events),

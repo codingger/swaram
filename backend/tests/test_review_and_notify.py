@@ -34,7 +34,9 @@ def test_contained_agents_become_review_items(pipeline):
 
     items = review.items(pipeline.store, "pending", "run-rev00001")
     kinds = {(i["role"], i["kind"]) for i in items}
-    assert ("coder", "held_egress") in kinds and ("coder", "paused_agent") in kinds and ("analyst", "paused_agent") in kinds
+    # Both culprits' first harmful actions are refused before they run and their egress held; the coder is also
+    # paused by live detection. Every containment is a review item.
+    assert {("analyst", "held_egress"), ("coder", "held_egress"), ("coder", "paused_agent")} <= kinds
     assert all(i["explanation"] for i in items)
 
 

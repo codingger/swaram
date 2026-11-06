@@ -49,7 +49,7 @@ if today's quota can't cover them (`GET /api/gemini/quota`).
 | `run_agents` | right after | `{agents: [{agent_id, name, role, permissions}]}` |
 | `event` | every agent action, as it happens | `{event_id, agent_id, timestamp, event_type, action, status, target, resource, sequence, gateway_decision, payload}`. `status: "denied"` with `payload.quarantined` means it was **blocked before it ran**. `payload.ai_trace` says why a model-driven agent acted. |
 | `detection` | a rule fires for the first time on some agents | `{sequence, timestamp, event_id, rule_id, rule_name, severity, agent_ids, reason}` (empty `agent_ids` = run-level, e.g. SG-026) |
-| `containment` | an agent is paused, or its outbound transfers held | `{agent_id, role, scope: "agent"\|"egress", trigger: "risk"\|"hijack_tripwire"\|"need_to_know", paused_at_sequence, risk, explanation, blocked_actions}` |
+| `containment` | an agent is paused, or its outbound transfers held | `{agent_id, role, scope: "agent"\|"egress", trigger: "risk"\|"hijack_tripwire"\|"need_to_know"\|"policy_check"\|"policy"\|"operator", paused_at_sequence, risk, explanation, blocked_actions}` |
 | `quarantine` | an untrusted input was withheld before the agent read it | `{agent_id, resource, claimed_sender, sequence}` |
 | `response` | the response policy acted on a new alert, live | `{sequence, rule_id, rule_name, severity, decision, agent_ids, applied}`; `applied` is e.g. `["paused"]`, `["egress held"]`, `["recorded"]`, or `["would_pause"]` in detect mode |
 | `operator` | a person paused an agent / held its egress from the UI | `{agent_id, action, result, note}` |
@@ -61,6 +61,14 @@ if today's quota can't cover them (`GET /api/gemini/quota`).
 Suggested UI: an agent grid that turns amber on `detection` and red on `containment`; a feed of `event`s where
 `status: "denied"` is shown as blocked; toasts for `detection`, `containment` and `quarantine`; a banner on
 `run_finished` with whether data left the system.
+
+**Pre-execution policy check.** In `contain` mode the live guard refuses any action outside the agent's own policy
+*before it runs*: a restricted resource it may not read, an upload to an unapproved destination, or handing restricted
+data to a teammate who may not hold it. It applies to every agent, whatever the cause (an injection, a goal of its
+own, a bug). The refused action is logged as `denied` and the agent's outbound transfers are held for review
+(`containment` with trigger `policy_check`). Honest work is never refused. It covers everything that goes through the
+gate: simulated runs, and platforms that call `/gate` (or use the SDK). Platforms that don't call the gate are covered
+at the network by the egress proxy. Turn it off with `LiveGuard(..., policy_gate=False)`.
 
 ## Operator controls (while a run is live)
 
@@ -144,3 +152,37 @@ scan, one log-coverage index per detection pass, and one-pass per-agent facts in
 
 Very long sessions (thousands of events) would still slow down; the next step would be evaluating the heavy rules over
 a recent window, which trades exactness on whole-run rules (e.g. SG-016 salami) and so is not done yet.
+
+## MCP gateway
+
+Agents that reach their tools over MCP (Model Context Protocol, streamable HTTP) can go through SwarmGuard without
+any code change. Point the agent's MCP client at `POST /api/ingest/{run_id}/mcp/{agent_id}` instead of the tool server,
+and open the session with:
+
+```json
+"mcp": {"upstream": "http://tools:9000/mcp", "tools": {"a1": ["search", "read_ticket"]}, "untrusted_results": true}
+```
+
+What the gateway does:
+- **`tools/list`**: tools outside the agent's allowlist are removed from the answer.
+- **`tools/call`**: an unlisted tool is refused. Every other call goes through the live guard's gate: pause, egress
+  hold, hijack tripwire and the pre-execution policy check.
+  - A call naming a resource (`path`, `file`, `resource`, ...) is checked as an access to that resource.
+  - A call naming a URL or `external:` destination is checked as an upload.
+  - A refusal comes back as an MCP tool error (`isError: true`), so the agent's framework handles it normally.
+  - Allowed calls go to the real server. Their output is reported as untrusted content, so the injection classifier
+    scores it.
+- **Everything else** passes through unchanged: initialize, notifications, resources, prompts.
+- **Identity:** with `require_agent_identity`, the agent sends its token in `X-Agent-Token`.
+
+## SIEM export (OCSF)
+
+`GET /api/runs/{run_id}/alerts?format=ocsf` returns the alerts as **OCSF Detection Findings** (class 2004). That's the
+open schema Splunk, Microsoft Sentinel, AWS Security Lake and QRadar ingest. Each finding carries:
+- the rule and severity;
+- the agents, as resources;
+- the evidence event ids and the recommended action;
+- its OWASP Agentic Top 10 risk IDs.
+
+Set `SWARMGUARD_SIEM_URL` (plus `SWARMGUARD_SIEM_AUTH` for an Authorization header) to push every finished run's
+findings automatically.

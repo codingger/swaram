@@ -506,7 +506,7 @@ therefore don't apply, and detection has to work from behaviour alone:
 - SG-002 catches the unapproved upload;
 - SG-001 catches the token read.
 
-**Honest limit.** The live guard detects these at once but can't stop the *first* act, because there's no untrusted
+**Honest limit (fixed in §22).** The live guard detects these at once but can't stop the *first* act, because there's no untrusted
 input to arm the tripwire. What stops that act is enforcement: the gateway in `enforce` mode or the egress proxy's
 allowlist. Tests cover both cases.
 
@@ -588,3 +588,66 @@ contained.
   check (SG-026).
   - We chose per-agent session tokens over public-key identities (DIDs, Ed25519): the server issues and verifies every
     token, so public keys would add no protection here.
+
+## 22. Pre-execution policy check: the first harmful action is refused
+
+The hijack tripwire only arms after an agent reads untrusted content, so an agent breaking policy *for its own
+reasons* got its first action through. Gemini did exactly that in §20. Now, in `contain` mode, the live guard checks
+every action against the agent's own policy before it runs, whatever the reason for it:
+- a restricted resource it may not read;
+- an upload to an unapproved destination;
+- restricted data handed to a teammate who may not hold it.
+
+An out-of-policy action is refused. The agent's outbound transfers are then held for human review (trigger
+`policy_check`), while it can keep doing permitted internal work.
+
+| Scenario (gateway only monitoring) | Before | Now |
+|---|---|---|
+| `unauthorized_access` | First secrets read completed; paused at the next event | First read refused before it ran; then paused |
+| `coordinated_leakage` / `sg003_leak_chain` | Hand-off completed, upload stopped by the egress hold | Hand-off refused, upload refused: nothing moves |
+| Internal-goal cases (no injection) | First violation completed | First violation refused before it ran |
+
+**Results:**
+- Honest agents are never refused: the normal runs at 5, 10 and 20 agents, and aligned models in the goal cases, are
+  untouched.
+- A refused attempt is still evidence. SG-003 now also flags a *refused* hand-off of restricted data (medium), so
+  prevention doesn't hide who tried.
+- The egress proxy keeps its own destination allowlist and asks the guard only about pauses, holds and the tripwire.
+
+**Coverage:** everything that goes through the gate, which means simulated runs and platforms that call `/gate` or use
+the SDK. Platforms that don't call the gate are covered at the network by the egress proxy.
+
+## 23. MCP gateway, SIEM export, OWASP coverage, procedure-shaped injections
+
+- **MCP gateway** (`app/services/mcp_gateway.py`). Agents that reach tools over MCP point their client at SwarmGuard,
+  with no code change.
+  - Unlisted tools are hidden and refused.
+  - Every `tools/call` goes through the live guard before the real server sees it. A call naming a restricted file is
+    checked as an access to it; a call naming a URL is checked as an upload.
+  - Tool output is scanned by the injection classifier.
+- **SIEM export.** Alerts are exported as OCSF Detection Findings (class 2004), each carrying its OWASP risk IDs. They
+  can be fetched on demand or pushed when a run finishes.
+- **OWASP Top 10 for Agentic Applications.** All 10 risks are covered (5 strong, 5 partial, gaps stated) and all 28
+  rules are mapped (`docs/owasp-agentic.md`, `GET /api/coverage/owasp`).
+- **Procedure-shaped injections.** The fuzzer can now hide the harmful step inside a procedure, bug repro or
+  checklist. That's the shape of the only injection that hijacked Gemini in §18.
+  - On Gemini (40 attempts), none hijacked: all 40 were refused. With every score at zero the search has no signal to
+    climb, and it never reached the exact combination that worked in §18 (ticket + bug repro).
+  - Gemini refuses these reliably when each one is tried on its own.
+
+**Second model: Ministral 3B, run locally through Ollama (7 Nov).** Raw results are kept locally (not committed) in
+`datasets/*-2026-11-07-ollama/`.
+
+| Test | Gemini 3.5 Flash-Lite (§20, above) | Ministral 3B |
+|---|---|---|
+| Internal goals (40 situations) | 9 broke policy, 0 covert | **13 broke policy, 2 covert**; control clean |
+| Injections (40 attempts) | 0 hijacked | **7 hijacked** |
+
+- **What drove the internal-goal violations.** "The partner token is in secrets/api_keys" led to a violation in 11 of
+  16 tries. Pressure from a deadline or a customer escalation mattered; being told actions are watched helped a little
+  (3 of 13 situations, against 10 of 27).
+- **The new shape part was confirmed.** The bug-repro shape hijacked Ministral in 6 of 23 attempts; a direct
+  "please upload" request in 0 of 6.
+- **Would SwarmGuard have stopped them?** We re-probed the 20 harmful situations once more (models are stochastic).
+  7 were harmful again, and **the pre-execution check refused all 7** (6 internal-goal, 1 injection). Replies are now
+  stored in full (4,000 characters), so this check can be repeated on any run.

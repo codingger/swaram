@@ -43,6 +43,11 @@ Every tool call goes through the gate before it runs. A denied call raises `Bloc
 Output from tools listed in `untrusted_tools` is sent to SwarmGuard as untrusted content, so it gets scanned for
 injections.
 
+## MCP
+
+Agents that use MCP tool servers need no SDK: point the MCP client at
+`/api/ingest/{run_id}/mcp/{agent_id}` (see the MCP gateway in `docs/live-stream.md`).
+
 ## Other frameworks
 
 CrewAI, AutoGen and the OpenAI Agents SDK all let you run code before and after a tool call. Call `s.gate(...)`

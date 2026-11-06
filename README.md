@@ -28,18 +28,19 @@ No model is needed: everything runs offline with scripted agents, and real model
 - **Threat Detection**: 28 rules (SG-001 to SG-028), a learned behavioural baseline, Bayesian risk with explanations,
   and an accuracy benchmark (30 attacks, 14 benign look-alikes; precision 1.0). A second, independent evidence source
   (egress proxy, audit and broker logs) keeps detection working when the agent log loses events.
-- **Live guard**: detection while a run happens. It blocks a hijacked agent before its first harmful action,
+- **Live guard**: detection while a run happens. It refuses any out-of-policy action before it runs (whatever the
+  cause: injection, a goal of the agent's own, a bug), blocks a hijacked agent before its first harmful action,
   quarantines impersonated messages, applies the response policy as alerts fire, and pushes everything to the UI over a
   WebSocket (`docs/live-stream.md`).
 - **Security Response**: a review queue (release / confirm, escalation, who decided), operator controls (pause an agent,
   stop a run), webhook notifications, honest records (`blocked` only when an action was really denied), and an egress
   proxy that enforces pauses and holds at the network even when the agent platform doesn't cooperate.
-- **Real agents**: a live ingest API with a pre-execution gate, a Python SDK and LangChain handler (`sdk/python`),
+- **Real agents**: a live ingest API with a pre-execution gate, an MCP gateway, a Python SDK and LangChain handler (`sdk/python`),
   per-agent identity tokens, OpenTelemetry and LangSmith importers, personal-data redaction, and a tamper-evident
   hash-chained log.
 - **Injection classifier** (SG-028): a model trained on public datasets scores every untrusted input; measured on
   datasets it never saw (`docs/injection-classifier.md`).
-- **Operations**: API keys with roles, a Gemini quota meter that refuses runs that won't fit, a dataset generator, an
+- **Operations**: OCSF alert export for SIEMs, OWASP Agentic Top 10 coverage map, API keys with roles, a Gemini quota meter that refuses runs that won't fit, a dataset generator, an
   adaptive injection fuzzer, an internal-goal fuzzer (agents breaking policy for a goal of their own, no attacker), a
   real-agent demo enforced at the network (`scripts/demo_real_agents.py`), and CI on every pull request.
 
@@ -47,6 +48,7 @@ No model is needed: everything runs offline with scripted agents, and real model
 |---|---|
 | `docs/threat-model.md` | Every threat, rule and measured result |
 | `docs/live-stream.md` | The live stream contract, operator controls, ingest API |
+| `docs/owasp-agentic.md` | Coverage of the OWASP Top 10 for Agentic Applications |
 | `docs/injection-classifier.md` | The trained injection classifier: data, licenses, measured results |
 | `sdk/python/README.md` | Connecting an agent platform (SDK, LangChain) |
 | `docs/collector-and-response.md` | Collector and response features |
@@ -97,6 +99,7 @@ Copy `.env.example` to `backend/.env`. Every variable is optional.
 | `SWARMGUARD_REDACT_PII` | `1` | Replace emails, phones, cards and SSNs in stored events with pseudonyms. |
 | `SWARMGUARD_EGRESS_PROXY_PORT` | none | Start the egress proxy: blocks paused / held agents and off-allowlist hosts at the network, no agent cooperation needed (`docs/live-stream.md`). |
 | `SWARMGUARD_EGRESS_ALLOW` / `SWARMGUARD_EGRESS_MODE` | none / `enforce` | Hosts agents may reach; `monitor` flags instead of refusing. |
+| `SWARMGUARD_SIEM_URL` / `SWARMGUARD_SIEM_AUTH` | none | Push each finished run's alerts as OCSF findings to a SIEM. |
 | `SWARMGUARD_CODE_EXEC` | `sandbox` | `off` never runs agent-written code. |
 | `SWARMGUARD_CORS_ORIGINS` | `http://localhost:5173,…` | Allowed browser origins. |
 
