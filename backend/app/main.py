@@ -34,7 +34,12 @@ async def lifespan(app: FastAPI):
     from app.services import review
 
     review.start_escalation_loop(get_store)  # overdue reviews are announced again
+    from app.services import egress_proxy
+
+    proxy = egress_proxy.start_from_env(get_pipeline())  # opt-in: SWARMGUARD_EGRESS_PROXY_PORT
     yield
+    if proxy:
+        proxy.stop()
 
 
 app = FastAPI(title="SwarmGuard", version="0.1.0", lifespan=lifespan)
@@ -231,6 +236,25 @@ def ingest_gate(run_id: str, body: dict[str, Any]) -> dict[str, Any]:
     if not body.get("agent_id"):
         raise HTTPException(400, "agent_id is required")
     return ingest.session(run_id).gate(body)
+
+
+@app.get("/api/ingest/{run_id}/control")
+def ingest_control(run_id: str) -> dict[str, Any]:
+    """Poll this: which agents are paused or have outbound transfers held right now, and why."""
+    from app.services import ingest
+
+    return ingest.control(run_id)
+
+
+@app.get("/api/egress-proxy")
+def egress_proxy_status() -> dict[str, Any]:
+    from app.services import egress_proxy
+
+    px = egress_proxy.PROXY
+    if px is None:
+        return {"running": False, "hint": "set SWARMGUARD_EGRESS_PROXY_PORT (and SWARMGUARD_EGRESS_ALLOW) to start it"}
+    return {"running": True, "host": px.host, "port": px.port, "mode": px.mode, "allow": sorted(px.allow),
+            "recent": px.decisions[-50:]}
 
 
 @app.post("/api/ingest/{run_id}/events")

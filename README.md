@@ -31,7 +31,8 @@ No model is needed: everything runs offline with scripted agents, and real model
   quarantines impersonated messages, applies the response policy as alerts fire, and pushes everything to the UI over a
   WebSocket (`docs/live-stream.md`).
 - **Security Response**: a review queue (release / confirm, escalation, who decided), operator controls (pause an agent,
-  stop a run), webhook notifications, and honest records (`blocked` only when an action was really denied).
+  stop a run), webhook notifications, honest records (`blocked` only when an action was really denied), and an egress
+  proxy that enforces pauses and holds at the network even when the agent platform doesn't cooperate.
 - **Real agents**: a live ingest API with a pre-execution gate, OpenTelemetry and LangSmith importers, personal-data
   redaction, and a tamper-evident hash-chained log.
 - **Operations**: API keys with roles, a Gemini quota meter that refuses runs that won't fit, a dataset generator, an
@@ -87,6 +88,8 @@ Copy `.env.example` to `backend/.env`. Every variable is optional.
 | `SWARMGUARD_WEBHOOK_URL` | none | Slack / Discord / Teams webhook for containments, quarantines and overdue reviews. |
 | `SWARMGUARD_REVIEW_ESCALATE_MIN` | `15` | Minutes before a pending review is escalated. |
 | `SWARMGUARD_REDACT_PII` | `1` | Replace emails, phones, cards and SSNs in stored events with pseudonyms. |
+| `SWARMGUARD_EGRESS_PROXY_PORT` | none | Start the egress proxy: blocks paused / held agents and off-allowlist hosts at the network, no agent cooperation needed (`docs/live-stream.md`). |
+| `SWARMGUARD_EGRESS_ALLOW` / `SWARMGUARD_EGRESS_MODE` | none / `enforce` | Hosts agents may reach; `monitor` flags instead of refusing. |
 | `SWARMGUARD_CODE_EXEC` | `sandbox` | `off` never runs agent-written code. |
 | `SWARMGUARD_CORS_ORIGINS` | `http://localhost:5173,…` | Allowed browser origins. |
 

@@ -82,6 +82,18 @@ def session(run_id: str) -> IngestSession:
     return s
 
 
+def control(run_id: str) -> dict[str, Any]:
+    """What the guard has decided about each agent right now, for a platform to poll and act on (no push needed)."""
+    s = session(run_id)
+    g = s.guard
+    if g is None:
+        return {"run_id": run_id, "mode": "off", "paused": {}, "held_egress": {}, "quarantined": []}
+    def why(c):
+        return {"trigger": c.trigger, "since_event": c.paused_at_sequence, "explanation": c.explanation}
+    return {"run_id": run_id, "mode": g.mode, "paused": {a: why(c) for a, c in g.paused.items()},
+            "held_egress": {a: why(c) for a, c in g.held.items()}, "quarantined": list(g.quarantined)}
+
+
 def add_events(pipeline, run_id: str, events: list[dict]) -> dict[str, Any]:
     s = session(run_id)
     before = len(s.guard.detections) if s.guard else 0
